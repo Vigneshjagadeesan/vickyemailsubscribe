@@ -8,19 +8,17 @@ from playwright.sync_api import sync_playwright
 fake = Faker()
 
 st.set_page_config(page_title="Universal Bulk Subscriber", layout="wide")
-st.title("Universal Auto-Subscriber (Streamlit Cloud Safe)")
+st.title("Universal Auto-Subscriber (Ultra-Light Engine)")
 
-# Browser binaries install check
 @st.cache_resource
 def install_playwright_browsers():
     try:
         subprocess.run(["playwright", "install", "chromium"], check=True)
     except Exception as e:
-        st.caption(f"Install check: {e}")
+        st.caption(f"Browser check: {e}")
 
 install_playwright_browsers()
 
-# State management
 if "current_index" not in st.session_state:
     st.session_state.current_index = 0
 if "is_running" not in st.session_state:
@@ -63,7 +61,7 @@ with col_b3:
 
 def check_captcha(page):
     try:
-        captcha = page.locator("iframe[src*='recaptcha' i], iframe[src*='hcaptcha' i], iframe[src*='turnstile' i], div[class*='captcha' i], div[id*='captcha' i], text=/robot|captcha|human verification/i")
+        captcha = page.locator("iframe[src*='recaptcha' i], iframe[src*='hcaptcha' i], iframe[src*='turnstile' i], div[class*='captcha' i], text=/robot|captcha|access denied|cloudflare|just a moment/i")
         return captcha.count() > 0
     except Exception:
         return False
@@ -75,55 +73,42 @@ def check_otp(page):
     except Exception:
         return False
 
-def fill_and_submit(scope, user_email):
-    """Broad CSS and generic attribute matcher for newsletter forms"""
-    submitted = False
+def smart_subscribe(page, user_email):
+    """Foreign languages matrum broad CSS patterns fill pannum"""
     try:
-        # 1. Fill Name if available
-        name_input = scope.locator("input[placeholder*='meno' i], input[name*='name' i], input[placeholder*='name' i], input[id*='name' i]").first
-        if name_input.count() > 0 and name_input.is_visible():
-            name_input.fill(fake.first_name())
+        email_field = page.locator("input[type='email'], input[name*='email' i], input[id*='email' i], input[placeholder*='mail' i]").first
+        if email_field.count() > 0 and email_field.is_visible():
+            name_field = page.locator("input[placeholder*='meno' i], input[name*='name' i], input[placeholder*='name' i], input[id*='name' i]").first
+            if name_field.count() > 0 and name_field.is_visible():
+                name_field.fill(fake.first_name())
 
-        # 2. Fill Email (Multiple fallbacks)
-        email_input = scope.locator("input[type='email'], input[name*='email' i], input[placeholder*='mail' i], input[id*='email' i]").first
-        if email_input.count() > 0 and email_input.is_visible():
-            email_input.fill(user_email)
+            email_field.fill(user_email)
             time.sleep(0.5)
 
-            # 3. Fill Password if prompted
-            pass_input = scope.locator("input[type='password']").first
-            if pass_input.count() > 0 and pass_input.is_visible():
-                pass_input.fill("AutoPass@2026")
-
-            # 4. Check consent/newsletter checkboxes
-            checkboxes = scope.locator("input[type='checkbox']").all()
-            for cb in checkboxes:
+            checkbox = page.locator("input[type='checkbox']").first
+            if checkbox.count() > 0 and checkbox.is_visible():
                 try:
-                    cb.check(force=True)
+                    checkbox.check(force=True)
                 except Exception:
                     pass
 
-            # 5. Click Subscribe/Submit
-            submit_btn = scope.locator("button[type='submit'], input[type='submit'], button:has-text('ZÍSKAŤ'), button:has-text('Zaregistrovať'), button:has-text('Subscribe'), button:has-text('Sign Up'), button:has-text('Prihlásiť'), button:has-text('Odoslať')").first
+            submit_btn = page.locator("button[type='submit'], input[type='submit'], button:has-text('ZÍSKAŤ'), button:has-text('Zaregistrovať'), button:has-text('Subscribe'), button:has-text('Sign Up'), button:has-text('Prihlásiť'), button:has-text('Join')").first
             if submit_btn.count() > 0 and submit_btn.is_visible():
                 submit_btn.click(timeout=3000)
-                submitted = True
+                return True
             else:
-                email_input.press("Enter")
-                submitted = True
+                email_field.press("Enter")
+                return True
     except Exception:
         pass
-    return submitted
+    return False
 
-# Ultra-low RAM flags for Streamlit Cloud
-cloud_chromium_args = [
+chromium_args = [
     "--no-sandbox",
     "--disable-setuid-sandbox",
     "--disable-dev-shm-usage",
     "--disable-gpu",
-    "--disable-extensions",
-    "--no-zygote",
-    "--renderer-process-limit=1"
+    "--blink-settings=imagesEnabled=false"  # Images disable panni RAM save pannum
 ]
 
 status_box = st.empty()
@@ -133,6 +118,8 @@ if st.session_state.is_running and urls:
     total_urls = len(urls)
 
     with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True, args=chromium_args)
+
         while st.session_state.current_index < total_urls and st.session_state.is_running:
             idx = st.session_state.current_index
             raw_url = urls[idx]
@@ -141,57 +128,24 @@ if st.session_state.is_running and urls:
             status_box.info(f"Processing ({idx + 1}/{total_urls}): {url}")
             progress_bar.progress((idx + 1) / total_urls)
 
-            browser = None
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                ignore_https_errors=True
+            )
+            page = context.new_page()
+
+            # Heavy images, fonts-a abort panni RAM clear-aa vachukom
+            page.route("**/*.{png,jpg,jpeg,svg,woff,woff2,gif,webp}", lambda route: route.abort())
+
             try:
-                # Launch per-domain to completely prevent RAM crashes
-                browser = p.chromium.launch(headless=True, args=cloud_chromium_args)
-                context = browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    ignore_https_errors=True
-                )
-                page = context.new_page()
+                page.goto(url, timeout=25000, wait_until="domcontentloaded")
+                time.sleep(2)
 
-                # Timeout 20s - avoids hanging on slow marketing trackers
-                page.goto(url, timeout=20000, wait_until="commit")
-                time.sleep(3)
-
-                # Check Captcha
                 if check_captcha(page):
                     st.session_state.captcha_list.append(url)
                 else:
-                    success = False
+                    success = smart_subscribe(page, email)
 
-                    # Priority 1: Popups / Modals
-                    popup = page.locator("div[class*='modal']:visible, div[class*='popup']:visible, div[role='dialog']:visible").first
-                    if popup.count() > 0:
-                        if fill_and_submit(popup, email):
-                            success = True
-                            time.sleep(2)
-
-                    # Priority 2: Account/User registration icons
-                    if not success:
-                        user_icon = page.locator("a[href*='account' i], a[href*='login' i], a[href*='prihlasenie' i], svg[class*='user' i]").first
-                        if user_icon.count() > 0 and user_icon.is_visible():
-                            try:
-                                user_icon.click(timeout=2000)
-                                time.sleep(1.5)
-                                reg_btn = page.locator("a:has-text('Registr'), button:has-text('Registr'), a:has-text('Sign up')").first
-                                if reg_btn.count() > 0:
-                                    reg_btn.click(timeout=2000)
-                                    time.sleep(1)
-                                if fill_and_submit(page, email):
-                                    success = True
-                                    time.sleep(2)
-                            except Exception:
-                                pass
-
-                    # Priority 3: Whole page / Footer form
-                    if not success:
-                        if fill_and_submit(page, email):
-                            success = True
-                            time.sleep(2)
-
-                    # Post submission validation
                     if check_captcha(page):
                         st.session_state.captcha_list.append(url)
                     elif check_otp(page):
@@ -199,39 +153,36 @@ if st.session_state.is_running and urls:
                     elif success:
                         st.session_state.success_list.append(url)
                     else:
-                        st.session_state.failed_list.append((url, "No newsletter box detected"))
+                        st.session_state.failed_list.append((url, "Form / Newsletter box kaanala"))
 
             except Exception as e:
-                err_msg = str(e)
-                if "TargetClosed" in err_msg or "closed" in err_msg:
-                    st.session_state.failed_list.append((url, "RAM limit exceeded (Skipped to avoid freeze)"))
+                err = str(e)
+                if "Timeout" in err:
+                    st.session_state.failed_list.append((url, "Site load aaga romba neram eduthu"))
                 else:
-                    st.session_state.failed_list.append((url, f"Load Error: {err_msg[:30]}"))
+                    st.session_state.failed_list.append((url, f"Error: {err[:35]}"))
             finally:
-                if browser:
-                    try:
-                        browser.close()
-                    except Exception:
-                        pass
-                # Explicit garbage collection to free Streamlit Cloud RAM
+                context.close()
                 gc.collect()
 
             st.session_state.current_index += 1
 
+        browser.close()
+
     if st.session_state.current_index >= total_urls:
-        status_box.success("Processing completed!")
+        status_box.success("Ella domains-um process aaiduchu!")
         st.session_state.is_running = False
     elif not st.session_state.is_running:
-        status_box.warning(f"Paused at ({st.session_state.current_index}/{total_urls}). Click 'Start / Continue' to resume.")
+        status_box.warning(f"Process paused! ({st.session_state.current_index}/{total_urls}) mudinjirukku. Continue panna 'Start / Continue' click pannunga.")
 
-# 4 Columns Display
 c1, c2, c3, c4 = st.columns(4)
 with c1:
     st.subheader(f"✅ Subscribed ({len(st.session_state.success_list)})")
     for item in st.session_state.success_list:
         st.write(f"- {item}")
 with c2:
-    st.subheader(f"🧩 CAPTCHA ({len(st.session_state.captcha_list)})")
+    st.subheader(f"🧩 CAPTCHA / Access Denied ({len(st.session_state.captcha_list)})")
+    st.caption("Direct-aa click panni open panni solve pannunga:")
     for item in st.session_state.captcha_list:
         st.markdown(f"- [{item}]({item})")
 with c3:
