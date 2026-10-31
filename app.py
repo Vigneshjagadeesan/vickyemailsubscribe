@@ -8,7 +8,7 @@ from playwright.sync_api import sync_playwright
 fake = Faker()
 
 st.set_page_config(page_title="Universal Bulk Subscriber", layout="wide")
-st.title("Universal Auto-Subscriber (Ultra-Light Engine)")
+st.title("Universal Auto-Subscriber (Crash-Proof)")
 
 @st.cache_resource
 def install_playwright_browsers():
@@ -74,8 +74,8 @@ def check_otp(page):
         return False
 
 def smart_subscribe(page, user_email):
-    """Foreign languages matrum broad CSS patterns fill pannum"""
     try:
+        # Check for email field in page or any popup
         email_field = page.locator("input[type='email'], input[name*='email' i], input[id*='email' i], input[placeholder*='mail' i]").first
         if email_field.count() > 0 and email_field.is_visible():
             name_field = page.locator("input[placeholder*='meno' i], input[name*='name' i], input[placeholder*='name' i], input[id*='name' i]").first
@@ -108,7 +108,7 @@ chromium_args = [
     "--disable-setuid-sandbox",
     "--disable-dev-shm-usage",
     "--disable-gpu",
-    "--blink-settings=imagesEnabled=false"  # Images disable panni RAM save pannum
+    "--blink-settings=imagesEnabled=false"
 ]
 
 status_box = st.empty()
@@ -117,57 +117,60 @@ progress_bar = st.progress(0)
 if st.session_state.is_running and urls:
     total_urls = len(urls)
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=chromium_args)
+    while st.session_state.current_index < total_urls and st.session_state.is_running:
+        idx = st.session_state.current_index
+        raw_url = urls[idx]
+        url = raw_url if raw_url.startswith("http") else f"https://{raw_url}"
 
-        while st.session_state.current_index < total_urls and st.session_state.is_running:
-            idx = st.session_state.current_index
-            raw_url = urls[idx]
-            url = raw_url if raw_url.startswith("http") else f"https://{raw_url}"
+        status_box.info(f"Processing ({idx + 1}/{total_urls}): {url}")
+        progress_bar.progress((idx + 1) / total_urls)
 
-            status_box.info(f"Processing ({idx + 1}/{total_urls}): {url}")
-            progress_bar.progress((idx + 1) / total_urls)
+        # Isolated Playwright execution per site: Oru site crash aanaalum script crash aagathu
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True, args=chromium_args)
+                context = browser.new_context(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                    ignore_https_errors=True
+                )
+                page = context.new_page()
+                page.route("**/*.{png,jpg,jpeg,svg,woff,woff2,gif,webp}", lambda route: route.abort())
 
-            context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                ignore_https_errors=True
-            )
-            page = context.new_page()
-
-            # Heavy images, fonts-a abort panni RAM clear-aa vachukom
-            page.route("**/*.{png,jpg,jpeg,svg,woff,woff2,gif,webp}", lambda route: route.abort())
-
-            try:
-                page.goto(url, timeout=25000, wait_until="domcontentloaded")
-                time.sleep(2)
-
-                if check_captcha(page):
-                    st.session_state.captcha_list.append(url)
-                else:
-                    success = smart_subscribe(page, email)
+                try:
+                    page.goto(url, timeout=20000, wait_until="domcontentloaded")
+                    time.sleep(2)
 
                     if check_captcha(page):
                         st.session_state.captcha_list.append(url)
-                    elif check_otp(page):
-                        st.session_state.otp_list.append(url)
-                    elif success:
-                        st.session_state.success_list.append(url)
                     else:
-                        st.session_state.failed_list.append((url, "Form / Newsletter box kaanala"))
+                        success = smart_subscribe(page, email)
 
-            except Exception as e:
-                err = str(e)
-                if "Timeout" in err:
-                    st.session_state.failed_list.append((url, "Site load aaga romba neram eduthu"))
-                else:
-                    st.session_state.failed_list.append((url, f"Error: {err[:35]}"))
-            finally:
-                context.close()
-                gc.collect()
+                        if check_captcha(page):
+                            st.session_state.captcha_list.append(url)
+                        elif check_otp(page):
+                            st.session_state.otp_list.append(url)
+                        elif success:
+                            st.session_state.success_list.append(url)
+                        else:
+                            st.session_state.failed_list.append((url, "Form / Newsletter box kaanala"))
 
-            st.session_state.current_index += 1
+                except Exception as site_err:
+                    err_text = str(site_err)
+                    if "Timeout" in err_text:
+                        st.session_state.failed_list.append((url, "Site load aaga late aachu (Timeout)"))
+                    else:
+                        st.session_state.failed_list.append((url, f"Error: {err_text[:35]}"))
 
-        browser.close()
+                finally:
+                    context.close()
+                    browser.close()
+
+        except Exception as browser_crash:
+            # Browser memory alavukku meeri crash aanaalum adutha site-ku jump aagidum
+            st.session_state.failed_list.append((url, "Memory / Bot block (Skipped)"))
+
+        gc.collect()
+        st.session_state.current_index += 1
 
     if st.session_state.current_index >= total_urls:
         status_box.success("Ella domains-um process aaiduchu!")
@@ -175,6 +178,7 @@ if st.session_state.is_running and urls:
     elif not st.session_state.is_running:
         status_box.warning(f"Process paused! ({st.session_state.current_index}/{total_urls}) mudinjirukku. Continue panna 'Start / Continue' click pannunga.")
 
+# 4 Columns Display
 c1, c2, c3, c4 = st.columns(4)
 with c1:
     st.subheader(f"✅ Subscribed ({len(st.session_state.success_list)})")
@@ -182,11 +186,12 @@ with c1:
         st.write(f"- {item}")
 with c2:
     st.subheader(f"🧩 CAPTCHA / Access Denied ({len(st.session_state.captcha_list)})")
-    st.caption("Direct-aa click panni open panni solve pannunga:")
+    st.caption("Direct-aa click panni solve pannunga:")
     for item in st.session_state.captcha_list:
         st.markdown(f"- [{item}]({item})")
 with c3:
     st.subheader(f"🔢 OTP Needed ({len(st.session_state.otp_list)})")
+    st.caption("Mail-la vantha OTP enter panna click pannunga:")
     for item in st.session_state.otp_list:
         st.markdown(f"- [{item}]({item})")
 with c4:
