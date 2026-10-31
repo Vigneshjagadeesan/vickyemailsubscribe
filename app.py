@@ -7,7 +7,7 @@ from playwright.sync_api import sync_playwright
 
 fake = Faker()
 
-st.set_page_config(page_title="Universal Bulk Subscriber (Smart Human/Register)", layout="wide")
+st.set_page_config(page_title="Universal Bulk Subscriber", layout="wide")
 st.title("Universal Bulk Subscriber (Human/Account & OTP/CAPTCHA Solver)")
 
 @st.cache_resource
@@ -19,7 +19,7 @@ def install_browsers():
 
 install_browsers()
 
-# Session State Setup
+# Session State
 if "current_index" not in st.session_state:
     st.session_state.current_index = 0
 if "is_running" not in st.session_state:
@@ -70,59 +70,52 @@ with col_b3:
 
 def fill_all_inputs(page, user_email):
     # 1. First Name
-    first_name_input = page.locator("input[placeholder*='meno' i], input[name*='firstname' i], input[id*='firstname' i], input[name*='name' i], input[placeholder*='name' i]").first
-    if first_name_input.count() > 0 and first_name_input.is_visible():
-        try:
-            first_name_input.fill(fake.first_name(), timeout=3000)
-        except Exception:
-            pass
+    try:
+        first_name_input = page.locator("input[placeholder*='meno' i], input[name*='name' i], input[id*='name' i]").first
+        if first_name_input.count() > 0 and first_name_input.is_visible():
+            first_name_input.fill(fake.first_name(), timeout=2000)
+    except Exception:
+        pass
 
-    # 2. Last Name
-    last_name_input = page.locator("input[name*='lastname' i], input[id*='lastname' i], input[placeholder*='last' i]").first
-    if last_name_input.count() > 0 and last_name_input.is_visible():
-        try:
-            last_name_input.fill(fake.last_name(), timeout=3000)
-        except Exception:
-            pass
+    # 2. Email (Strict CSS selectors without syntax errors)
+    try:
+        email_input = page.locator("input[type='email'], input[name*='email' i], input[id*='email' i], input[placeholder*='mail' i]").first
+        if email_input.count() > 0 and email_input.is_visible():
+            email_input.fill(user_email, timeout=3000)
+    except Exception:
+        pass
 
-    # 3. Email
-    email_input = page.locator("input[type='email'], input[name*='email' i], input[id*='email' i], input[placeholder*='mail' i]").first
-    if email_input.count() > 0 and email_input.is_visible():
-        try:
-            email_input.fill(user_email, timeout=4000)
-        except Exception:
-            pass
+    # 3. Password
+    try:
+        pass_input = page.locator("input[type='password']").first
+        if pass_input.count() > 0 and pass_input.is_visible():
+            pass_input.fill("AutoPass@2026", timeout=2000)
+    except Exception:
+        pass
 
-    # 4. Password
-    pass_input = page.locator("input[type='password']").first
-    if pass_input.count() > 0 and pass_input.is_visible():
-        try:
-            pass_input.fill("AutoPass@2026", timeout=3000)
-        except Exception:
-            pass
+    # 4. Checkboxes
+    try:
+        checkboxes = page.locator("input[type='checkbox']").all()
+        for cb in checkboxes:
+            try:
+                cb.check(force=True, timeout=1000)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
-    # 5. Checkboxes
-    checkboxes = page.locator("input[type='checkbox']").all()
-    for cb in checkboxes:
-        try:
-            cb.check(force=True, timeout=2000)
-        except Exception:
-            pass
-
-    # 6. Submit Button
-    submit_btn = page.locator("button[type='submit'], input[type='submit'], button:has-text('Register'), button:has-text('Sign up'), button:has-text('Vytvoriť'), button:has-text('ZÍSKAŤ'), button:has-text('Subscribe')").first
-    if submit_btn.count() > 0 and submit_btn.is_visible():
-        try:
-            submit_btn.click(timeout=4000)
+    # 5. Submit Button
+    try:
+        submit_btn = page.locator("button[type='submit'], input[type='submit'], button:has-text('Register'), button:has-text('Sign up'), button:has-text('Subscribe'), button:has-text('ZÍSKAŤ')").first
+        if submit_btn.count() > 0 and submit_btn.is_visible():
+            submit_btn.click(timeout=3000)
             return True
-        except Exception:
-            pass
-    elif email_input.count() > 0:
-        try:
-            email_input.press("Enter")
+        else:
+            page.keyboard.press("Enter")
             return True
-        except Exception:
-            pass
+    except Exception:
+        pass
+
     return False
 
 browser_args = [
@@ -140,6 +133,8 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
     total_urls = len(urls)
 
     with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True, args=browser_args)
+        
         while st.session_state.current_index < total_urls and st.session_state.is_running:
             idx = st.session_state.current_index
             raw_url = urls[idx]
@@ -148,60 +143,79 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
             status_box.info(f"Processing ({idx + 1}/{total_urls}): {url}")
             progress_bar.progress((idx + 1) / total_urls)
 
-            browser = None
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                ignore_https_errors=True
+            )
+            page = context.new_page()
+
             try:
-                browser = p.chromium.launch(headless=True, args=browser_args)
-                page = browser.new_page(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-                )
-                page.goto(url, timeout=25000, wait_until="domcontentloaded")
+                # Page visit
+                page.goto(url, timeout=20000, wait_until="domcontentloaded")
                 time.sleep(2)
 
                 # Strategy 1: Human / Profile / Account Icon Click
-                human_icon = page.locator("a[href*='account' i], a[href*='login' i], a[href*='registr' i], a[href*='prihlasenie' i], svg[class*='user' i], i[class*='user' i], [aria-label*='account' i]").first
-                if human_icon.count() > 0 and human_icon.is_visible():
-                    try:
-                        human_icon.click(timeout=3000)
-                        time.sleep(2)
+                try:
+                    human_icon = page.locator("a[href*='account' i], a[href*='login' i], a[href*='registr' i], a[href*='prihlasenie' i], svg[class*='user' i], i[class*='user' i]").first
+                    if human_icon.count() > 0 and human_icon.is_visible():
+                        human_icon.click(timeout=2000)
+                        time.sleep(1.5)
                         reg_tab = page.locator("a:has-text('Registr'), button:has-text('Registr'), a:has-text('Create account'), a:has-text('Sign up')").first
                         if reg_tab.count() > 0 and reg_tab.is_visible():
-                            reg_tab.click(timeout=3000)
-                            time.sleep(1.5)
-                    except Exception:
-                        pass
+                            reg_tab.click(timeout=2000)
+                            time.sleep(1)
+                except Exception:
+                    pass
 
                 # Strategy 2: Popup modal check
-                popup = page.locator("div[class*='modal']:visible, div[class*='popup']:visible, div[role='dialog']:visible").first
-                active_scope = popup if popup.count() > 0 else page
+                try:
+                    popup = page.locator("div[class*='modal']:visible, div[class*='popup']:visible, div[role='dialog']:visible").first
+                    active_scope = popup if popup.count() > 0 else page
+                except Exception:
+                    active_scope = page
 
-                # Autofill all data
+                # Autofill form
                 fill_all_inputs(active_scope, email)
                 time.sleep(3)
 
                 # Check for CAPTCHA or OTP
-                is_captcha = page.locator("iframe[src*='recaptcha' i], iframe[src*='hcaptcha' i], text=/robot|captcha|verification/i").count() > 0
-                is_otp = page.locator("input[name*='otp' i], input[name*='code' i], input[placeholder*='code' i], text=/verification code|enter otp|kód/i").count() > 0
+                is_captcha = False
+                is_otp = False
+                try:
+                    is_captcha = page.locator("iframe[src*='recaptcha' i], iframe[src*='hcaptcha' i], text=/robot|captcha|verification/i").count() > 0
+                    is_otp = page.locator("input[name*='otp' i], input[name*='code' i], input[placeholder*='code' i], text=/verification code|enter otp|kód/i").count() > 0
+                except Exception:
+                    pass
 
                 if is_captcha or is_otp:
                     page.screenshot(path="current_screen.png")
                     st.session_state.waiting_for_user = True
                     st.session_state.pending_site = url
                     st.session_state.pending_type = "OTP" if is_otp else "CAPTCHA"
+                    context.close()
                     browser.close()
                     st.rerun()
 
                 st.session_state.success_list.append(url)
 
             except Exception as e:
-                st.session_state.failed_list.append((url, str(e)[:35]))
+                err_msg = str(e)
+                if "Target page" in err_msg or "closed" in err_msg:
+                    st.session_state.failed_list.append((url, "Browser Timeout / Closed"))
+                else:
+                    st.session_state.failed_list.append((url, err_msg[:30]))
             finally:
-                if browser:
-                    try:
-                        browser.close()
-                    except Exception:
-                        pass
+                try:
+                    context.close()
+                except Exception:
+                    pass
 
             st.session_state.current_index += 1
+
+        try:
+            browser.close()
+        except Exception:
+            pass
 
     if st.session_state.current_index >= total_urls:
         status_box.success("Ella domains-um process aaiduchu!")
