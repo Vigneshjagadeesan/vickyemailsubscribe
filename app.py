@@ -289,4 +289,34 @@ if st.session_state.waiting_for_user and os.path.exists("current_screen.png"):
     st.image("current_screen.png", caption="Current Website Status View")
 
     c_sub1, c_sub2 = st.columns([2, 5])
-    with c_
+    with c_sub1:
+        if st.button("✅ Naan Mudichitten / Continue Next Site"):
+            st.session_state.success_list.append(st.session_state.pending_site)
+            st.session_state.current_index += 1
+            st.session_state.waiting_for_user = False
+            st.session_state.pending_site = None
+            st.session_state.pending_reason = None
+            st.session_state.is_running = True
+            st.rerun()
+
+    with c_sub2:
+        if st.button("⏭️ Skip Intha Website"):
+            st.session_state.failed_list.append((st.session_state.pending_site, "Skipped by user"))
+            st.session_state.current_index += 1
+            st.session_state.waiting_for_user = False
+            st.session_state.pending_site = None
+            st.session_state.pending_reason = None
+            st.session_state.is_running = True
+            st.rerun()
+
+# Summary Dashboard
+st.divider()
+c1, c2 = st.columns(2)
+with c1:
+    st.subheader(f"✅ Verified Signups ({len(st.session_state.success_list)})")
+    for item in st.session_state.success_list:
+        st.write(f"- {item}")
+with c2:
+    st.subheader(f"❌ Failed / Skipped ({len(st.session_state.failed_list)})")
+    for item, err in st.session_state.failed_list:
+        st.write(f"- {item} ({err})")
