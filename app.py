@@ -1,183 +1,120 @@
 import streamlit as st
-import requests
-from bs4 import BeautifulSoup
-import re
+import time
+import os
+import subprocess
 from faker import Faker
-import urllib3
-
-# InsecureRequestWarning hide panna
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+from playwright.sync_api import sync_playwright
 
 fake = Faker()
 
-st.set_page_config(page_title="Universal Bulk Subscriber", layout="wide")
-st.title("Universal Auto-Subscriber (Crash-Proof Engine)")
+st.set_page_config(page_title="Universal Bulk Subscriber (Interactive)", layout="wide")
+st.title("Universal Auto-Subscriber (Interactive CAPTCHA & OTP Solver)")
 
-# State management
-if "current_index" not in st.session_state:
-    st.session_state.current_index = 0
-if "is_running" not in st.session_state:
-    st.session_state.is_running = False
-if "success_list" not in st.session_state:
-    st.session_state.success_list = []
-if "captcha_list" not in st.session_state:
-    st.session_state.captcha_list = []
-if "otp_list" not in st.session_state:
-    st.session_state.otp_list = []
-if "failed_list" not in st.session_state:
-    st.session_state.failed_list = []
-
-email = st.text_input("Enter unga Yahoo Email Address:", placeholder="example@yahoo.com")
-domains_input = st.text_area("Enter Domains / URLs (Line by line):", placeholder="https://bellalab.sk")
-
-urls = [u.strip() for u in domains_input.strip().splitlines() if u.strip()]
-
-col_b1, col_b2, col_b3 = st.columns([1.5, 1.5, 4])
-with col_b1:
-    if st.button("▶️ Start / Continue"):
-        if not email or not urls:
-            st.error("Email matrum Domains compulsory da!")
-        else:
-            st.session_state.is_running = True
-
-with col_b2:
-    if st.button("⏹️ Stop / Pause"):
-        st.session_state.is_running = False
-
-with col_b3:
-    if st.button("🔄 Reset All"):
-        st.session_state.current_index = 0
-        st.session_state.is_running = False
-        st.session_state.success_list = []
-        st.session_state.captcha_list = []
-        st.session_state.otp_list = []
-        st.session_state.failed_list = []
-        st.rerun()
-
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9"
-}
-
-def auto_subscribe_url(url, target_email):
-    session = requests.Session()
-    session.headers.update(headers)
-    
+@st.cache_resource
+def install_browsers():
     try:
-        res = session.get(url, timeout=12, verify=False)
-        html = res.text.lower()
+        subprocess.run(["playwright", "install", "chromium"], check=True)
+    except Exception:
+        pass
 
-        # Cloudflare / Access Denied Check
-        if res.status_code in [403, 503] or "cloudflare" in html or "access denied" in html or "cf-ray" in res.headers:
-            return "CAPTCHA", "Cloudflare protection / Access Denied"
+install_browsers()
 
-        soup = BeautifulSoup(res.text, "html.parser")
+# Session State
+if "browser" not in st.session_state:
+    st.session_state.browser = None
+if "page" not in st.session_state:
+    st.session_state.page = None
+if "playwright" not in st.session_state:
+    st.session_state.playwright = None
+if "pending_site" not in st.session_state:
+    st.session_state.pending_site = None
+if "pending_type" not in st.session_state:
+    st.session_state.pending_type = None
 
-        # Forms-la subscribe/email box check pannum
-        forms = soup.find_all("form")
-        for form in forms:
-            inputs = form.find_all(["input", "textarea"])
-            has_email = False
-            form_payload = {}
+email = st.text_input("Enter Yahoo Email Address:", placeholder="example@yahoo.com")
+single_domain = st.text_input("Target Website URL:", placeholder="https://bellalab.sk")
 
-            for inp in inputs:
-                inp_name = inp.get("name")
-                if not inp_name:
-                    continue
-                inp_type = inp.get("type", "text").lower()
-                inp_val = inp.get("value", "")
+col_a, col_b = st.columns(2)
 
-                if "email" in inp_name.lower() or inp_type == "email":
-                    form_payload[inp_name] = target_email
-                    has_email = True
-                elif "name" in inp_name.lower() or "meno" in inp_name.lower():
-                    form_payload[inp_name] = fake.first_name()
-                elif "pass" in inp_name.lower():
-                    form_payload[inp_name] = "SecurePass@2026"
-                elif inp_type == "checkbox":
-                    form_payload[inp_name] = inp_val if inp_val else "1"
-                else:
-                    form_payload[inp_name] = inp_val if inp_val else fake.word()
-
-            if has_email:
-                action = form.get("action")
-                method = form.get("method", "post").lower()
-
-                post_url = requests.compat.urljoin(url, action) if action else url
-
-                if method == "post":
-                    resp = session.post(post_url, data=form_payload, timeout=12, verify=False)
-                else:
-                    resp = session.get(post_url, params=form_payload, timeout=12, verify=False)
-
-                resp_text = resp.text.lower()
-                if "otp" in resp_text or "kód" in resp_text or "verification" in resp_text:
-                    return "OTP", "OTP Required"
-                return "SUCCESS", "Subscribed"
-
-        # Direct email input search
-        direct_email_input = soup.find("input", {"type": "email"}) or soup.find("input", {"name": re.compile(r"email", re.I)})
-        if direct_email_input:
-            return "SUCCESS", "Subscribed via direct field"
-
-        return "FAILED", "No subscription form found"
-
-    except requests.exceptions.Timeout:
-        return "FAILED", "Timeout (Site slow)"
-    except Exception as e:
-        return "FAILED", str(e)[:35]
-
-status_box = st.empty()
-progress_bar = st.progress(0)
-
-if st.session_state.is_running and urls:
-    total_urls = len(urls)
-
-    while st.session_state.current_index < total_urls and st.session_state.is_running:
-        idx = st.session_state.current_index
-        raw_url = urls[idx]
-        url = raw_url if raw_url.startswith("http") else f"https://{raw_url}"
-
-        status_box.info(f"Processing ({idx + 1}/{total_urls}): {url}")
-        progress_bar.progress((idx + 1) / total_urls)
-
-        status, reason = auto_subscribe_url(url, email)
-
-        if status == "SUCCESS":
-            st.session_state.success_list.append(url)
-        elif status == "CAPTCHA":
-            st.session_state.captcha_list.append(url)
-        elif status == "OTP":
-            st.session_state.otp_list.append(url)
+with col_a:
+    if st.button("🚀 Fill & Process Website"):
+        if not email or not single_domain:
+            st.error("Email matrum Website URL rendum compulsory da!")
         else:
-            st.session_state.failed_list.append((url, reason))
+            if st.session_state.playwright is None:
+                st.session_state.playwright = sync_playwright().start()
+                st.session_state.browser = st.session_state.playwright.chromium.launch(
+                    headless=True,
+                    args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+                )
+                st.session_state.page = st.session_state.browser.new_page()
 
-        st.session_state.current_index += 1
+            page = st.session_state.page
+            url = single_domain if single_domain.startswith("http") else f"https://{single_domain}"
+            
+            st.info(f"Opening and auto-filling details: {url}")
+            page.goto(url, timeout=30000, wait_until="domcontentloaded")
+            time.sleep(2)
 
-    if st.session_state.current_index >= total_urls:
-        status_box.success("Ella websites-um process aaiduchu!")
-        st.session_state.is_running = False
-    elif not st.session_state.is_running:
-        status_box.warning(f"Process paused! ({st.session_state.current_index}/{total_urls}) mudinjirukku.")
+            # Auto Fill Email & Fake Data
+            email_field = page.locator("input[type='email'], input[name*='email' i], input[placeholder*='mail' i]").first
+            if email_field.count() > 0:
+                name_field = page.locator("input[placeholder*='meno' i], input[name*='name' i]").first
+                if name_field.count() > 0:
+                    name_field.fill(fake.first_name())
+                
+                email_field.fill(email)
 
-# Results Display
-c1, c2, c3, c4 = st.columns(4)
-with c1:
-    st.subheader(f"✅ Subscribed ({len(st.session_state.success_list)})")
-    for item in st.session_state.success_list:
-        st.write(f"- {item}")
-with c2:
-    st.subheader(f"🧩 CAPTCHA / Blocked ({len(st.session_state.captcha_list)})")
-    st.caption("Direct-aa click panni solve pannunga:")
-    for item in st.session_state.captcha_list:
-        st.markdown(f"- [{item}]({item})")
-with c3:
-    st.subheader(f"🔢 OTP Needed ({len(st.session_state.otp_list)})")
-    st.caption("Mail-la vantha OTP enter panna click pannunga:")
-    for item in st.session_state.otp_list:
-        st.markdown(f"- [{item}]({item})")
-with c4:
-    st.subheader(f"❌ Failed ({len(st.session_state.failed_list)})")
-    for item, err in st.session_state.failed_list:
-        st.write(f"- {item} ({err})")
+                # Consent Checkbox
+                cb = page.locator("input[type='checkbox']").first
+                if cb.count() > 0:
+                    try:
+                        cb.check(force=True)
+                    except Exception:
+                        pass
+
+                # Submit Button
+                btn = page.locator("button[type='submit'], input[type='submit'], button:has-text('Subscribe'), button:has-text('ZÍSKAŤ')").first
+                if btn.count() > 0:
+                    btn.click(timeout=3000)
+                else:
+                    email_field.press("Enter")
+                
+                time.sleep(3)
+
+                # Screenshot capture
+                page.screenshot(path="current_screen.png")
+
+                captcha_check = page.locator("iframe[src*='recaptcha' i], iframe[src*='hcaptcha' i], text=/captcha|robot/i").count() > 0
+                otp_check = page.locator("input[name*='otp' i], input[name*='code' i], text=/verification code|otp|kód/i").count() > 0
+
+                if captcha_check or otp_check:
+                    st.session_state.pending_site = url
+                    st.session_state.pending_type = "OTP" if otp_check else "CAPTCHA"
+                    st.warning(f"{st.session_state.pending_type} detected! Screen paathu keezha code enter pannunga.")
+                else:
+                    st.success("Subscribed successfully without OTP/CAPTCHA!")
+            else:
+                st.error("Email subscribe box kedaikala.")
+
+# Interactive Solver Section
+if st.session_state.pending_site and os.path.exists("current_screen.png"):
+    st.divider()
+    st.subheader(f"Verification Screen: {st.session_state.pending_site}")
+    st.image("current_screen.png", caption="Current Website Screen")
+    
+    user_code = st.text_input(f"Enter {st.session_state.pending_type} code / text inga type pannunga:")
+    
+    if st.button("Submit Code to Website"):
+        page = st.session_state.page
+        code_input = page.locator("input[name*='otp' i], input[name*='code' i], input[id*='code' i], input[type='text']:visible").first
+        if code_input.count() > 0:
+            code_input.fill(user_code)
+            code_input.press("Enter")
+            time.sleep(3)
+            page.screenshot(path="current_screen.png")
+            st.success("Code successfully submitted!")
+            st.session_state.pending_site = None
+            st.rerun()
+        else:
+            st.error("Website-la OTP/CAPTCHA box kedaikala.")
