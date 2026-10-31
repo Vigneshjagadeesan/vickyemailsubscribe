@@ -8,8 +8,8 @@ from playwright.sync_api import sync_playwright
 
 fake = Faker()
 
-st.set_page_config(page_title="Universal Verified Subscriber", layout="wide")
-st.title("Universal Verified Subscriber (Strict Success & Manual Assist)")
+st.set_page_config(page_title="Strict Register & Verified Subscriber", layout="wide")
+st.title("Universal Verified Account Creator & Subscriber")
 
 @st.cache_resource
 def install_browsers():
@@ -20,7 +20,7 @@ def install_browsers():
 
 install_browsers()
 
-# State variables
+# State Management
 if "current_index" not in st.session_state:
     st.session_state.current_index = 0
 if "is_running" not in st.session_state:
@@ -37,13 +37,13 @@ if "pending_reason" not in st.session_state:
     st.session_state.pending_reason = None
 
 email = st.text_input("Enter unga Yahoo Email Address:", placeholder="example@yahoo.com")
-domains_input = st.text_area("Enter Bulk Domains / URLs (Line by line):", placeholder="https://bellalab.sk\nhttps://cohopte.com")
+domains_input = st.text_area("Enter Bulk Domains / URLs (Oru line-ku oru domain):", placeholder="https://bellalab.sk\nhttps://cohopte.com")
 
 urls = [u.strip() for u in domains_input.strip().splitlines() if u.strip()]
 
 col_b1, col_b2, col_b3 = st.columns([1.5, 1.5, 4])
 with col_b1:
-    if st.button("▶️ Start Step-by-Step Automation"):
+    if st.button("▶️ Start Strict Registration"):
         if not email or not urls:
             st.error("Email matrum Domains list compulsory da!")
         else:
@@ -72,8 +72,8 @@ with col_b3:
 
 st.divider()
 
-# Live Status Screen Monitor
-st.subheader("📺 Live Step-by-Step Monitor")
+# Live Monitor UI
+st.subheader("📺 Real-Time Registration Monitor")
 live_status = st.empty()
 live_image = st.empty()
 progress_bar = st.progress(0)
@@ -97,26 +97,28 @@ def show_step(page, msg, wait_sec=2):
         pass
     time.sleep(wait_sec)
 
-def check_success_message(page):
-    """Page-la Thank you / Success confirmation varudha nu check pannum"""
-    success_pattern = re.compile(
-        r"thank\s*you|thanks|subscribed|success|welcome|confirmation|check\s*your\s*email|registra|úspešn|danke|merci", 
-        re.I
-    )
+def verify_confirmation(page):
+    """Actual-aa confirmation text vandha mattum thaan True tharum"""
+    success_keywords = [
+        "thank you", "thanks for registering", "account created", 
+        "check your email", "activation link", "confirm your email", 
+        "welcome to", "success", "registration successful", "registra", "danke"
+    ]
     try:
-        page_text = page.inner_text("body", timeout=3000)
-        if success_pattern.search(page_text):
-            return True
+        body_text = page.inner_text("body", timeout=4000).lower()
+        for kw in success_keywords:
+            if kw in body_text:
+                return True, kw
     except Exception:
         pass
-    
+
     current_url = page.url.lower()
-    if any(k in current_url for k in ["thank", "success", "confirmed", "welcome", "account"]):
-        return True
+    if any(k in current_url for k in ["thank", "success", "registered", "account-created"]):
+        return True, "URL confirmed"
 
-    return False
+    return False, None
 
-# Main Execution Loop
+# Main Loop
 if st.session_state.is_running and not st.session_state.waiting_for_user and urls:
     total_urls = len(urls)
 
@@ -137,91 +139,110 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
                 context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
                 page = context.new_page()
 
-                # Step 1: Open Website
-                show_step(page, f"Step 1: Website open panrom -> {url}", wait_sec=2)
+                # 1. Site Open
+                show_step(page, f"Step 1: Website open pandrom -> {url}", wait_sec=2)
                 page.goto(url, timeout=30000, wait_until="commit")
-                time.sleep(3)
-                show_step(page, f"Step 2: Page load aaiduchu -> {url}", wait_sec=2)
+                time.sleep(4)
 
-                # Step 2: Popup check
-                popup_found = False
+                # 2. Popup Check (Newsletter / Sign up popup mattum)
                 try:
                     popup = page.locator("div[class*='modal']:visible, div[class*='popup']:visible, div[role='dialog']:visible").first
                     if popup.count() > 0:
-                        p_email = popup.locator("input[type='email'], input[name*='email' i], input[placeholder*='mail' i]").first
+                        p_email = popup.locator("input[type='email'], input[name*='email' i]").first
                         if p_email.count() > 0 and p_email.is_visible():
-                            show_step(page, "Step 3: Newsletter/Discount Popup-la email fill panrom...", wait_sec=2)
+                            show_step(page, "Step 2: Popup kandupidichom, email fill pandrom...", wait_sec=2)
                             p_email.fill(email, timeout=2000)
-                            p_btn = popup.locator("button[type='submit'], input[type='submit'], button:has-text('Subscribe'), button:has-text('ZÍSKAŤ')").first
+                            p_btn = popup.locator("button[type='submit'], input[type='submit'], button:has-text('Sign'), button:has-text('Subscribe'), button:has-text('Get')").first
                             if p_btn.count() > 0 and p_btn.is_visible():
                                 p_btn.click(timeout=2000)
                             else:
                                 p_email.press("Enter")
-                            popup_found = True
                             time.sleep(4)
                 except Exception:
                     pass
 
-                # Step 3: Register / Account Icon click (Strictly avoid Login)
-                if not popup_found:
-                    try:
-                        human_icon = page.locator("a[href*='account' i], a[href*='customer' i], svg[class*='user' i], i[class*='user' i]").first
-                        if human_icon.count() > 0 and human_icon.is_visible():
-                            show_step(page, "Step 3: Account/Register icon click panrom...", wait_sec=2)
-                            human_icon.click(timeout=2000)
-                            time.sleep(2)
+                # 3. Strictly find Register / Sign Up (Login-a complete-aa avoid pannum)
+                reg_page_found = False
+                show_step(page, "Step 3: Register / Create Account page thedurom (Login-a ignore pandrom)...", wait_sec=2)
 
-                            reg_btn = page.locator("a:has-text('Register'), a:has-text('Sign up'), a:has-text('Create account'), a:has-text('Zaregistrovať')").first
-                            if reg_btn.count() > 0 and reg_btn.is_visible():
-                                reg_btn.click(timeout=2000)
-                                time.sleep(2)
-                    except Exception:
-                        pass
+                # First direct register links thedum
+                reg_link = page.locator("a:has-text('Register'), a:has-text('Sign Up'), a:has-text('Create Account'), a:has-text('Join'), a[href*='register' i], a[href*='signup' i]").first
+                if reg_link.count() > 0 and reg_link.is_visible():
+                    reg_link.click(timeout=3000)
+                    time.sleep(3)
+                    reg_page_found = True
+                else:
+                    # Human icon kulla irundha click panni thedum
+                    human_icon = page.locator("a[href*='account' i], svg[class*='user' i], i[class*='user' i], [aria-label*='account' i]").first
+                    if human_icon.count() > 0 and human_icon.is_visible():
+                        human_icon.click(timeout=2000)
+                        time.sleep(2)
+                        sub_reg = page.locator("a:has-text('Register'), a:has-text('Sign up'), a:has-text('Create'), a:has-text('Zaregistrovať')").first
+                        if sub_reg.count() > 0 and sub_reg.is_visible():
+                            sub_reg.click(timeout=3000)
+                            time.sleep(3)
+                            reg_page_found = True
 
-                    # Step 4: Form details fill
-                    show_step(page, "Step 4: Form details fill panrom...", wait_sec=2)
-                    
-                    # Name
-                    try:
-                        name_box = page.locator("input[placeholder*='name' i], input[name*='name' i], input[placeholder*='meno' i]").first
-                        if name_box.count() > 0 and name_box.is_visible():
-                            name_box.fill(fake.first_name(), timeout=1500)
-                    except Exception:
-                        pass
+                # 4. Fill Strict Registration Form
+                show_step(page, "Step 4: Sign up form fill pandrom (Name, Email, Password)...", wait_sec=2)
 
-                    # Password
-                    try:
-                        pwd_boxes = page.locator("input[type='password']").all()
-                        for pb in pwd_boxes:
-                            if pb.is_visible():
-                                pb.fill("Pass@2026#Secure", timeout=1000)
-                    except Exception:
-                        pass
+                # First Name & Last Name
+                try:
+                    fn = page.locator("input[name*='first' i], input[placeholder*='first' i], input[id*='first' i], input[placeholder*='meno' i]").first
+                    if fn.count() > 0 and fn.is_visible():
+                        fn.fill(fake.first_name(), timeout=1500)
+                except Exception:
+                    pass
 
-                    # Checkbox
-                    try:
-                        cbs = page.locator("input[type='checkbox']").all()
-                        for c in cbs:
-                            c.check(force=True, timeout=1000)
-                    except Exception:
-                        pass
+                try:
+                    ln = page.locator("input[name*='last' i], input[placeholder*='last' i], input[id*='last' i]").first
+                    if ln.count() > 0 and ln.is_visible():
+                        ln.fill(fake.last_name(), timeout=1500)
+                except Exception:
+                    pass
 
-                    # Email & Submit
-                    email_box = page.locator("input[type='email'], input[name*='email' i], input[placeholder*='mail' i]").first
-                    if email_box.count() > 0 and email_box.is_visible():
-                        email_box.fill(email, timeout=2000)
-                        time.sleep(1)
-                        show_step(page, f"Email enter panniyachu ({email}), submit panrom...", wait_sec=2)
-                        
-                        btn = page.locator("button[type='submit'], input[type='submit'], button:has-text('Subscribe'), button:has-text('Sign up'), button:has-text('Register')").first
-                        if btn.count() > 0 and btn.is_visible():
-                            btn.click(timeout=2000)
-                        else:
-                            email_box.press("Enter")
+                # Email
+                try:
+                    em_field = page.locator("input[type='email'], input[name*='email' i], input[placeholder*='mail' i]").first
+                    if em_field.count() > 0 and em_field.is_visible():
+                        em_field.fill(email, timeout=2000)
+                except Exception:
+                    pass
 
-                time.sleep(5)
+                # Password Fields (Password & Confirm Password)
+                try:
+                    pwds = page.locator("input[type='password']").all()
+                    for p_input in pwds:
+                        if p_input.is_visible():
+                            p_input.fill("VickySecure@2026!", timeout=1000)
+                except Exception:
+                    pass
 
-                # Step 5: Check CAPTCHA / OTP / Access Denied
+                # Checkboxes (I agree, Terms, Newsletter)
+                try:
+                    cbs = page.locator("input[type='checkbox']").all()
+                    for cb in cbs:
+                        cb.check(force=True, timeout=1000)
+                except Exception:
+                    pass
+
+                # Submit Click (Explicit Register/Sign up buttons)
+                show_step(page, "Step 5: Form submit pandrom...", wait_sec=2)
+                submit_clicked = False
+                try:
+                    btn = page.locator("button:has-text('Register'), button:has-text('Sign Up'), button:has-text('Create'), button:has-text('Vytvoriť'), button[type='submit'], input[type='submit']").first
+                    if btn.count() > 0 and btn.is_visible():
+                        btn.click(timeout=3000)
+                        submit_clicked = True
+                    else:
+                        page.keyboard.press("Enter")
+                        submit_clicked = True
+                except Exception:
+                    pass
+
+                time.sleep(6)  # Server response aaga nalla time vidurom
+
+                # 5. Check for CAPTCHA / OTP / Access Block
                 is_captcha = page.locator("iframe[src*='recaptcha' i], iframe[src*='hcaptcha' i], iframe[src*='turnstile' i], text=/robot|captcha|access denied/i").count() > 0
                 is_otp = page.locator("input[name*='otp' i], input[name*='code' i], input[placeholder*='code' i], text=/verification code|enter otp|kód/i").count() > 0
 
@@ -229,24 +250,24 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
                     page.screenshot(path="current_screen.png")
                     st.session_state.waiting_for_user = True
                     st.session_state.pending_site = url
-                    st.session_state.pending_reason = "OTP Verification Needed" if is_otp else "CAPTCHA / Security Check Detected"
+                    st.session_state.pending_reason = "OTP Verification Kekkudhu" if is_otp else "CAPTCHA Security Protection Irukku"
                     context.close()
                     browser.close()
                     st.rerun()
 
-                # Step 6: Strict Check for "Thank You" / Success confirmation
-                show_step(page, "Step 5: Thank You / Confirmation message check panrom...", wait_sec=2)
-                success_detected = check_success_message(page)
+                # 6. Strict Check for "Thank You" / Confirmation
+                show_step(page, "Step 6: Confirmation message verify pandrom...", wait_sec=2)
+                is_confirmed, match_msg = verify_confirmation(page)
 
-                if success_detected:
-                    show_step(page, f"✅ Confirmed! Success message vandhuduchu: {url}", wait_sec=3)
+                if is_confirmed:
+                    show_step(page, f"✅ Confirmation vandhuduchu ({match_msg})! Adutha domain-ku porom.", wait_sec=3)
                     st.session_state.success_list.append(url)
                 else:
-                    # Confirmation text varalana adutha site-ku automatic-aa pogaathu; user review-kku nikkum
+                    # Confirmation text varalana adutha site-ku thaanaga pogaathu, stop aagi direct link kaatum
                     page.screenshot(path="current_screen.png")
                     st.session_state.waiting_for_user = True
                     st.session_state.pending_site = url
-                    st.session_state.pending_reason = "Thank You / Confirmation message varala (Form submit aagalaya nu check pannunga)"
+                    st.session_state.pending_reason = "Thank you / Signup confirm aagala. Site direct-aa open panni check pannunga."
                     context.close()
                     browser.close()
                     st.rerun()
@@ -261,23 +282,23 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
         time.sleep(2)
 
     if st.session_state.current_index >= total_urls:
-        live_status.success("Ellaa websites-um process aagi mudinjiduchu!")
+        live_status.success("Ellaa domains-um manual verification oda complete aaiduchu!")
         st.session_state.is_running = False
 
-# Interactive Action Required Section
+# Action Required Stop Area (Manual Solver)
 if st.session_state.waiting_for_user and os.path.exists("current_screen.png"):
     st.divider()
     st.subheader(f"⚠️ Action Required for: {st.session_state.pending_site}")
-    st.error(f"Kaaranam: {st.session_state.pending_reason}")
+    st.error(f"Reason: {st.session_state.pending_reason}")
     
-    st.markdown(f"### 👉 [Click here to open and solve {st.session_state.pending_site}]({st.session_state.pending_site})")
-    st.caption("Mela irukkura link-a open panni CAPTCHA / OTP / Form mudichittu keezha irukura green button-a click pannunga:")
+    st.markdown(f"### 👉 [Inga Click Panni Site-a Open Pannunga: {st.session_state.pending_site}]({st.session_state.pending_site})")
+    st.write("Mela irukkura link-a new tab-la open panni CAPTCHA / Signup mudichitu, vandha approm keezha irukura button-a click pannunga:")
     
-    st.image("current_screen.png", caption="Current Website Status Screen")
+    st.image("current_screen.png", caption="Current Site Status View")
 
     c_sub1, c_sub2 = st.columns([2, 5])
     with c_sub1:
-        if st.button("✅ I have completed / Continue Next Site"):
+        if st.button("✅ Naan Mudichitten / Continue Next Site"):
             st.session_state.success_list.append(st.session_state.pending_site)
             st.session_state.current_index += 1
             st.session_state.waiting_for_user = False
@@ -287,7 +308,7 @@ if st.session_state.waiting_for_user and os.path.exists("current_screen.png"):
             st.rerun()
 
     with c_sub2:
-        if st.button("⏭️ Skip this Website"):
+        if st.button("⏭️ Skip Intha Website"):
             st.session_state.failed_list.append((st.session_state.pending_site, "Skipped by user"))
             st.session_state.current_index += 1
             st.session_state.waiting_for_user = False
@@ -300,7 +321,7 @@ if st.session_state.waiting_for_user and os.path.exists("current_screen.png"):
 st.divider()
 c1, c2 = st.columns(2)
 with c1:
-    st.subheader(f"✅ Verified & Subscribed ({len(st.session_state.success_list)})")
+    st.subheader(f"✅ Verified Signups ({len(st.session_state.success_list)})")
     for item in st.session_state.success_list:
         st.write(f"- {item}")
 with c2:
