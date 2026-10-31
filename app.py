@@ -1,6 +1,7 @@
 import streamlit as st
 import time
 import os
+import gc
 import subprocess
 from faker import Faker
 from playwright.sync_api import sync_playwright
@@ -8,7 +9,7 @@ from playwright.sync_api import sync_playwright
 fake = Faker()
 
 st.set_page_config(page_title="Universal Bulk Subscriber", layout="wide")
-st.title("Universal Bulk Subscriber (Human/Account & OTP/CAPTCHA Solver)")
+st.title("Universal Bulk Subscriber (Crash-Proof Engine)")
 
 @st.cache_resource
 def install_browsers():
@@ -36,7 +37,7 @@ if "pending_type" not in st.session_state:
     st.session_state.pending_type = None
 
 email = st.text_input("Enter unga Yahoo Email Address:", placeholder="example@yahoo.com")
-domains_input = st.text_area("Enter Bulk Domains / URLs (Ovoru line-kum oru domain):", placeholder="https://bellalab.sk\nhttps://cohopte.com")
+domains_input = st.text_area("Enter Bulk Domains / URLs (Line by line):", placeholder="https://bellalab.sk\nhttps://cohopte.com")
 
 urls = [u.strip() for u in domains_input.strip().splitlines() if u.strip()]
 
@@ -77,7 +78,7 @@ def fill_all_inputs(page, user_email):
     except Exception:
         pass
 
-    # 2. Email (Strict CSS selectors without syntax errors)
+    # 2. Email
     try:
         email_input = page.locator("input[type='email'], input[name*='email' i], input[id*='email' i], input[placeholder*='mail' i]").first
         if email_input.count() > 0 and email_input.is_visible():
@@ -122,7 +123,9 @@ browser_args = [
     "--no-sandbox",
     "--disable-setuid-sandbox",
     "--disable-dev-shm-usage",
-    "--disable-gpu"
+    "--disable-gpu",
+    "--no-zygote",
+    "--disable-extensions"
 ]
 
 status_box = st.empty()
@@ -132,90 +135,90 @@ progress_bar = st.progress(0)
 if st.session_state.is_running and not st.session_state.waiting_for_user and urls:
     total_urls = len(urls)
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True, args=browser_args)
-        
-        while st.session_state.current_index < total_urls and st.session_state.is_running:
-            idx = st.session_state.current_index
-            raw_url = urls[idx]
-            url = raw_url if raw_url.startswith("http") else f"https://{raw_url}"
+    while st.session_state.current_index < total_urls and st.session_state.is_running:
+        idx = st.session_state.current_index
+        raw_url = urls[idx]
+        url = raw_url if raw_url.startswith("http") else f"https://{raw_url}"
 
-            status_box.info(f"Processing ({idx + 1}/{total_urls}): {url}")
-            progress_bar.progress((idx + 1) / total_urls)
+        status_box.info(f"Processing ({idx + 1}/{total_urls}): {url}")
+        progress_bar.progress((idx + 1) / total_urls)
 
-            context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                ignore_https_errors=True
-            )
-            page = context.new_page()
-
-            try:
-                # Page visit
-                page.goto(url, timeout=20000, wait_until="domcontentloaded")
-                time.sleep(2)
-
-                # Strategy 1: Human / Profile / Account Icon Click
-                try:
-                    human_icon = page.locator("a[href*='account' i], a[href*='login' i], a[href*='registr' i], a[href*='prihlasenie' i], svg[class*='user' i], i[class*='user' i]").first
-                    if human_icon.count() > 0 and human_icon.is_visible():
-                        human_icon.click(timeout=2000)
-                        time.sleep(1.5)
-                        reg_tab = page.locator("a:has-text('Registr'), button:has-text('Registr'), a:has-text('Create account'), a:has-text('Sign up')").first
-                        if reg_tab.count() > 0 and reg_tab.is_visible():
-                            reg_tab.click(timeout=2000)
-                            time.sleep(1)
-                except Exception:
-                    pass
-
-                # Strategy 2: Popup modal check
-                try:
-                    popup = page.locator("div[class*='modal']:visible, div[class*='popup']:visible, div[role='dialog']:visible").first
-                    active_scope = popup if popup.count() > 0 else page
-                except Exception:
-                    active_scope = page
-
-                # Autofill form
-                fill_all_inputs(active_scope, email)
-                time.sleep(3)
-
-                # Check for CAPTCHA or OTP
-                is_captcha = False
-                is_otp = False
-                try:
-                    is_captcha = page.locator("iframe[src*='recaptcha' i], iframe[src*='hcaptcha' i], text=/robot|captcha|verification/i").count() > 0
-                    is_otp = page.locator("input[name*='otp' i], input[name*='code' i], input[placeholder*='code' i], text=/verification code|enter otp|kód/i").count() > 0
-                except Exception:
-                    pass
-
-                if is_captcha or is_otp:
-                    page.screenshot(path="current_screen.png")
-                    st.session_state.waiting_for_user = True
-                    st.session_state.pending_site = url
-                    st.session_state.pending_type = "OTP" if is_otp else "CAPTCHA"
-                    context.close()
-                    browser.close()
-                    st.rerun()
-
-                st.session_state.success_list.append(url)
-
-            except Exception as e:
-                err_msg = str(e)
-                if "Target page" in err_msg or "closed" in err_msg:
-                    st.session_state.failed_list.append((url, "Browser Timeout / Closed"))
-                else:
-                    st.session_state.failed_list.append((url, err_msg[:30]))
-            finally:
-                try:
-                    context.close()
-                except Exception:
-                    pass
-
-            st.session_state.current_index += 1
-
+        # Ovvoru domain-kum individual Playwright context - crash aanaalum script stop aagadhu
         try:
-            browser.close()
-        except Exception:
-            pass
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True, args=browser_args)
+                context = browser.new_context(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                    ignore_https_errors=True
+                )
+                page = context.new_page()
+
+                # RAM crash thadukka images matrum heavy media-va block panrom
+                page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "media", "font"] else route.continue_())
+
+                try:
+                    page.goto(url, timeout=20000, wait_until="domcontentloaded")
+                    time.sleep(2)
+
+                    # 1. Human / Profile / Account Icon click
+                    try:
+                        human_icon = page.locator("a[href*='account' i], a[href*='login' i], a[href*='registr' i], a[href*='prihlasenie' i], svg[class*='user' i], i[class*='user' i]").first
+                        if human_icon.count() > 0 and human_icon.is_visible():
+                            human_icon.click(timeout=2000)
+                            time.sleep(1.5)
+                            reg_tab = page.locator("a:has-text('Registr'), button:has-text('Registr'), a:has-text('Create account'), a:has-text('Sign up')").first
+                            if reg_tab.count() > 0 and reg_tab.is_visible():
+                                reg_tab.click(timeout=2000)
+                                time.sleep(1)
+                    except Exception:
+                        pass
+
+                    # 2. Popup modal check
+                    try:
+                        popup = page.locator("div[class*='modal']:visible, div[class*='popup']:visible, div[role='dialog']:visible").first
+                        active_scope = popup if popup.count() > 0 else page
+                    except Exception:
+                        active_scope = page
+
+                    # 3. Autofill inputs
+                    fill_all_inputs(active_scope, email)
+                    time.sleep(2)
+
+                    # 4. CAPTCHA / OTP Check
+                    is_captcha = False
+                    is_otp = False
+                    try:
+                        is_captcha = page.locator("iframe[src*='recaptcha' i], iframe[src*='hcaptcha' i], text=/robot|captcha|verification/i").count() > 0
+                        is_otp = page.locator("input[name*='otp' i], input[name*='code' i], input[placeholder*='code' i], text=/verification code|enter otp|kód/i").count() > 0
+                    except Exception:
+                        pass
+
+                    if is_captcha or is_otp:
+                        page.screenshot(path="current_screen.png")
+                        st.session_state.waiting_for_user = True
+                        st.session_state.pending_site = url
+                        st.session_state.pending_type = "OTP" if is_otp else "CAPTCHA"
+                        context.close()
+                        browser.close()
+                        st.rerun()
+
+                    st.session_state.success_list.append(url)
+
+                except Exception as inner_err:
+                    st.session_state.failed_list.append((url, str(inner_err)[:35]))
+                finally:
+                    try:
+                        context.close()
+                        browser.close()
+                    except Exception:
+                        pass
+
+        except Exception as outer_err:
+            # Browser crash aanaalum script nikaama adutha site-ku move aagidum
+            st.session_state.failed_list.append((url, "Browser Timeout / RAM Crash"))
+
+        gc.collect()
+        st.session_state.current_index += 1
 
     if st.session_state.current_index >= total_urls:
         status_box.success("Ella domains-um process aaiduchu!")
@@ -248,7 +251,7 @@ if st.session_state.waiting_for_user and os.path.exists("current_screen.png"):
             st.session_state.is_running = True
             st.rerun()
 
-# Results
+# Results Section
 c1, c2 = st.columns(2)
 with c1:
     st.subheader(f"✅ Subscribed ({len(st.session_state.success_list)})")
