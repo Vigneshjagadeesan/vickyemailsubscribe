@@ -7,8 +7,8 @@ from playwright.sync_api import sync_playwright
 
 fake = Faker()
 
-st.set_page_config(page_title="Universal Bulk Subscriber (Interactive)", layout="wide")
-st.title("Universal Auto-Subscriber (Interactive CAPTCHA & OTP Solver)")
+st.set_page_config(page_title="Universal Bulk Subscriber (Smart Human/Register)", layout="wide")
+st.title("Universal Bulk Subscriber (Human/Account & OTP/CAPTCHA Solver)")
 
 @st.cache_resource
 def install_browsers():
@@ -20,101 +20,131 @@ def install_browsers():
 install_browsers()
 
 # Session State
-if "browser" not in st.session_state:
-    st.session_state.browser = None
-if "page" not in st.session_state:
-    st.session_state.page = None
-if "playwright" not in st.session_state:
-    st.session_state.playwright = None
+if "current_index" not in st.session_state:
+    st.session_state.current_index = 0
+if "is_running" not in st.session_state:
+    st.session_state.is_running = False
+if "success_list" not in st.session_state:
+    st.session_state.success_list = []
+if "failed_list" not in st.session_state:
+    st.session_state.failed_list = []
+if "waiting_for_user" not in st.session_state:
+    st.session_state.waiting_for_user = False
 if "pending_site" not in st.session_state:
     st.session_state.pending_site = None
 if "pending_type" not in st.session_state:
     st.session_state.pending_type = None
 
-email = st.text_input("Enter Yahoo Email Address:", placeholder="example@yahoo.com")
-single_domain = st.text_input("Target Website URL:", placeholder="https://bellalab.sk")
+email = st.text_input("Enter unga Yahoo Email Address:", placeholder="example@yahoo.com")
+domains_input = st.text_area("Enter Bulk Domains / URLs (Ovoru line-kum oru domain):", placeholder="https://bellalab.sk\nhttps://cohopte.com")
 
-col_a, col_b = st.columns(2)
+urls = [u.strip() for u in domains_input.strip().splitlines() if u.strip()]
 
-with col_a:
-    if st.button("🚀 Fill & Process Website"):
-        if not email or not single_domain:
-            st.error("Email matrum Website URL rendum compulsory da!")
+col_b1, col_b2, col_b3 = st.columns([1.5, 1.5, 4])
+with col_b1:
+    if st.button("▶️ Start / Continue Bulk Process"):
+        if not email or not urls:
+            st.error("Email matrum Bulk Domains list compulsory da!")
         else:
-            if st.session_state.playwright is None:
-                st.session_state.playwright = sync_playwright().start()
-                st.session_state.browser = st.session_state.playwright.chromium.launch(
-                    headless=True,
-                    args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
-                )
-                st.session_state.page = st.session_state.browser.new_page()
+            st.session_state.is_running = True
+            st.session_state.waiting_for_user = False
 
-            page = st.session_state.page
-            url = single_domain if single_domain.startswith("http") else f"https://{single_domain}"
-            
-            st.info(f"Opening and auto-filling details: {url}")
-            page.goto(url, timeout=30000, wait_until="domcontentloaded")
-            time.sleep(2)
+with col_b2:
+    if st.button("⏹️ Stop / Pause"):
+        st.session_state.is_running = False
 
-            # Auto Fill Email & Fake Data
-            email_field = page.locator("input[type='email'], input[name*='email' i], input[placeholder*='mail' i]").first
-            if email_field.count() > 0:
-                name_field = page.locator("input[placeholder*='meno' i], input[name*='name' i]").first
-                if name_field.count() > 0:
-                    name_field.fill(fake.first_name())
-                
-                email_field.fill(email)
+with col_b3:
+    if st.button("🔄 Reset All"):
+        st.session_state.current_index = 0
+        st.session_state.is_running = False
+        st.session_state.waiting_for_user = False
+        st.session_state.pending_site = None
+        st.session_state.success_list = []
+        st.session_state.failed_list = []
+        if os.path.exists("current_screen.png"):
+            try:
+                os.remove("current_screen.png")
+            except Exception:
+                pass
+        st.rerun()
 
-                # Consent Checkbox
-                cb = page.locator("input[type='checkbox']").first
-                if cb.count() > 0:
-                    try:
-                        cb.check(force=True)
-                    except Exception:
-                        pass
+def fill_all_inputs(page, user_email):
+    """Human icon click aana approm ella boxes-um safe-aa fill pannum"""
+    # 1. First Name
+    first_name_input = page.locator("input[placeholder*='meno' i], input[name*='firstname' i], input[id*='firstname' i], input[name*='name' i], input[placeholder*='name' i]").first
+    if first_name_input.count() > 0 and first_name_input.is_visible():
+        try:
+            first_name_input.fill(fake.first_name(), timeout=3000)
+        except Exception:
+            pass
 
-                # Submit Button
-                btn = page.locator("button[type='submit'], input[type='submit'], button:has-text('Subscribe'), button:has-text('ZÍSKAŤ')").first
-                if btn.count() > 0:
-                    btn.click(timeout=3000)
-                else:
-                    email_field.press("Enter")
-                
-                time.sleep(3)
+    # 2. Last Name
+    last_name_input = page.locator("input[name*='lastname' i], input[id*='lastname' i], input[placeholder*='last' i]").first
+    if last_name_input.count() > 0 and last_name_input.is_visible():
+        try:
+            last_name_input.fill(fake.last_name(), timeout=3000)
+        except Exception:
+            pass
 
-                # Screenshot capture
-                page.screenshot(path="current_screen.png")
+    # 3. Email
+    email_input = page.locator("input[type='email'], input[name*='email' i], input[id*='email' i], input[placeholder*='mail' i]").first
+    if email_input.count() > 0 and email_input.is_visible():
+        try:
+            email_input.fill(user_email, timeout=4000)
+        except Exception:
+            pass
 
-                captcha_check = page.locator("iframe[src*='recaptcha' i], iframe[src*='hcaptcha' i], text=/captcha|robot/i").count() > 0
-                otp_check = page.locator("input[name*='otp' i], input[name*='code' i], text=/verification code|otp|kód/i").count() > 0
+    # 4. Password
+    pass_input = page.locator("input[type='password']").first
+    if pass_input.count() > 0 and pass_input.is_visible():
+        try:
+            pass_input.fill("AutoPass@2026", timeout=3000)
+        except Exception:
+            pass
 
-                if captcha_check or otp_check:
-                    st.session_state.pending_site = url
-                    st.session_state.pending_type = "OTP" if otp_check else "CAPTCHA"
-                    st.warning(f"{st.session_state.pending_type} detected! Screen paathu keezha code enter pannunga.")
-                else:
-                    st.success("Subscribed successfully without OTP/CAPTCHA!")
-            else:
-                st.error("Email subscribe box kedaikala.")
+    # 5. Checkboxes (terms/newsletter)
+    checkboxes = page.locator("input[type='checkbox']").all()
+    for cb in checkboxes:
+        try:
+            cb.check(force=True, timeout=2000)
+        except Exception:
+            pass
 
-# Interactive Solver Section
-if st.session_state.pending_site and os.path.exists("current_screen.png"):
-    st.divider()
-    st.subheader(f"Verification Screen: {st.session_state.pending_site}")
-    st.image("current_screen.png", caption="Current Website Screen")
-    
-    user_code = st.text_input(f"Enter {st.session_state.pending_type} code / text inga type pannunga:")
-    
-    if st.button("Submit Code to Website"):
-        page = st.session_state.page
-        code_input = page.locator("input[name*='otp' i], input[name*='code' i], input[id*='code' i], input[type='text']:visible").first
-        if code_input.count() > 0:
-            code_input.fill(user_code)
-            code_input.press("Enter")
-            time.sleep(3)
-            page.screenshot(path="current_screen.png")
-            st.success("Code successfully submitted!")
-            st.session_state.pending_site = None
-            st.rerun()
-        else:
-            st.error("Website-la OTP/CAPTCHA box kedaikala.")
+    # 6. Submit Button
+    submit_btn = page.locator("button[type='submit'], input[type='submit'], button:has-text('Register'), button:has-text('Sign up'), button:has-text('Vytvoriť'), button:has-text('ZÍSKAŤ'), button:has-text('Subscribe')").first
+    if submit_btn.count() > 0 and submit_btn.is_visible():
+        try:
+            submit_btn.click(timeout=4000)
+            return True
+        except Exception:
+            pass
+    elif email_input.count() > 0:
+        try:
+            email_input.press("Enter")
+            return True
+        except Exception:
+            pass
+    return False
+
+browser_args = [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu"
+]
+
+status_box = st.empty()
+progress_bar = st.progress(0)
+
+# Main Automation Loop
+if st.session_state.is_running and not st.session_state.waiting_for_user and urls:
+    total_urls = len(urls)
+
+    with sync_playwright() as p:
+        while st.session_state.current_index < total_urls and st.session_state.is_running:
+            idx = st.session_state.current_index
+            raw_url = urls[idx]
+            url = raw_url if raw_url.startswith("http") else f"https://{raw_url}"
+
+            status_box.info(f"Processing ({idx + 1}/{total_urls}): {url}")
+            progress_bar.progress((idx + 1) /
