@@ -33,7 +33,7 @@ if "pending_reason" not in st.session_state:
     st.session_state.pending_reason = None
 
 email = st.text_input("Enter unga Yahoo Email Address:", placeholder="example@yahoo.com")
-domains_input = st.text_area("Enter Domains / URLs (Oru line-ku oru domain):", placeholder="https://kbombkratom.com\nhttps://yulyoie.com")
+domains_input = st.text_area("Enter Domains / URLs (Oru line-ku oru domain):", placeholder="https://bondiresortwear.com.au/\nhttps://yulyoie.com")
 
 urls = [u.strip() for u in domains_input.strip().splitlines() if u.strip()]
 
@@ -73,7 +73,6 @@ live_status = st.empty()
 live_image = st.empty()
 progress_bar = st.progress(0)
 
-# Stable Chromium flags for Streamlit Cloud (No crash, reliable renderer)
 browser_args = [
     "--no-sandbox",
     "--disable-setuid-sandbox",
@@ -127,6 +126,28 @@ def handle_checkboxes(container):
     except Exception:
         pass
 
+def try_fill_and_submit_in_frame(frame_or_page, target_email):
+    """Main page matrum Klaviyo/Omnisend iframe-kulla irukura email fields-a auto fill pannum"""
+    try:
+        email_inputs = frame_or_page.locator("input[type='email'], input[name*='email' i], input[placeholder*='email' i], input[placeholder*='mail' i], input[aria-label*='email' i]").all()
+        for inp in email_inputs:
+            if inp.is_visible():
+                inp.click(timeout=1500)
+                inp.fill(target_email)
+                time.sleep(1)
+                handle_checkboxes(frame_or_page)
+                
+                # Submit button inside same frame
+                btn = frame_or_page.locator("//button[@type='submit' or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'subscribe') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'get') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'sign') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'join')] | //input[@type='submit']").first
+                if btn.count() > 0 and btn.is_visible():
+                    btn.click(timeout=2500)
+                else:
+                    inp.press("Enter")
+                return True
+    except Exception:
+        pass
+    return False
+
 def verify_newsletter_success(page):
     keywords = [
         "grazie per l'iscrizione", "grazie", "thank you", "thanks for subscribing",
@@ -140,6 +161,16 @@ def verify_newsletter_success(page):
                 return True, kw
     except Exception:
         pass
+
+    # Check inside all frames
+    for f in page.frames:
+        try:
+            f_text = f.inner_text("body", timeout=1500).lower()
+            for kw in keywords:
+                if kw in f_text:
+                    return True, kw
+        except Exception:
+            pass
 
     try:
         curr_url = page.url.lower()
@@ -172,7 +203,6 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
                 context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
                 page = context.new_page()
 
-                # Block heavy media & fonts only, keep styles intact so layout does not crash
                 page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["media", "font"] else route.continue_())
 
                 safe_show_step(page, f"Step 1: Website open panrom: {url}", wait_sec=1)
@@ -191,58 +221,32 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
                 time.sleep(3)
                 auto_accept_cookies(page)
 
-                # Step 2: Wait for Popup to trigger
-                safe_show_step(page, "Step 2: Popup varudha nu wait pandrom...", wait_sec=2)
-                time.sleep(3)
+                # Popup trigger aaga wait panrom
+                safe_show_step(page, "Step 2: Popup (Klaviyo/Modal) thedurom...", wait_sec=2)
+                time.sleep(4)
 
                 submitted = False
 
-                # Priority 1: Check Modal / Popup Newsletter
-                try:
-                    popup = page.locator("div[class*='modal']:visible, div[class*='popup']:visible, div[role='dialog']:visible, div[class*='newsletter-popup']:visible, div[id*='popup']:visible").first
-                    if popup.count() > 0 and popup.is_visible():
-                        p_email = popup.locator("input[type='email'], input[name*='email' i], input[placeholder*='mail' i]").first
-                        if p_email.count() > 0 and p_email.is_visible():
-                            safe_show_step(page, "Popup vandhuduchu! Email fill pandrom...", wait_sec=1)
-                            p_email.fill(email)
-                            time.sleep(1)
-                            handle_checkboxes(popup)
-                            
-                            p_btn = popup.locator("//button[@type='submit' or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'subscribe') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'get') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'sign')] | //input[@type='submit']").first
-                            if p_btn.count() > 0 and p_btn.is_visible():
-                                p_btn.click(timeout=2500)
-                            else:
-                                p_email.press("Enter")
-                            submitted = True
-                            time.sleep(4)
-                except Exception:
-                    pass
+                # 1. Main Page-la irukura popup check
+                submitted = try_fill_and_submit_in_frame(page, email)
 
-                # Priority 2: Page / Footer Newsletter if no popup appeared
+                # 2. Iframes (Klaviyo, Mailchimp, Omnisend popups) check
                 if not submitted:
-                    safe_show_step(page, "Popup varala, Footer newsletter thedurom...", wait_sec=1)
+                    for frame in page.frames:
+                        if frame != page.main_frame:
+                            if try_fill_and_submit_in_frame(frame, email):
+                                safe_show_step(page, "Iframe popup-la email fill panni submit panniyachu!", wait_sec=1)
+                                submitted = True
+                                break
+
+                # 3. Popup varalana Footer scroll
+                if not submitted:
+                    safe_show_step(page, "Popup varala, Footer thedurom...", wait_sec=1)
                     page.keyboard.press("PageDown")
                     time.sleep(1)
                     page.keyboard.press("PageDown")
                     time.sleep(1)
-
-                    input_field = page.locator("//input[@type='email' or contains(@name, 'email') or contains(@placeholder, 'email') or contains(@placeholder, 'indirizzo') or contains(@placeholder, 'mail')]").first
-                    if input_field.count() > 0 and input_field.is_visible():
-                        input_field.scroll_into_view_if_needed()
-                        time.sleep(1)
-                        input_field.click()
-                        input_field.fill(email)
-                        time.sleep(1)
-                        safe_show_step(page, f"Email enter panniyachu: {email}")
-
-                        handle_checkboxes(page)
-
-                        btn = page.locator("//button[@type='submit' or contains(@class, 'newsletter') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'subscribe') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'iscriviti') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'join')]").first
-                        if btn.count() > 0 and btn.is_visible():
-                            btn.click(timeout=2500)
-                        else:
-                            input_field.press("Enter")
-                        submitted = True
+                    submitted = try_fill_and_submit_in_frame(page, email)
 
                 time.sleep(5)
 
