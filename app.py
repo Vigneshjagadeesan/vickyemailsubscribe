@@ -111,6 +111,22 @@ def auto_accept_cookies(page):
     except Exception:
         pass
 
+def handle_checkboxes(container_or_page):
+    """Checkbox irundha automatic-aa click panni tick pannum"""
+    try:
+        cbs = container_or_page.locator("input[type='checkbox']").all()
+        for cb in cbs:
+            try:
+                if not cb.is_checked():
+                    cb.check(force=True, timeout=1000)
+            except Exception:
+                try:
+                    cb.click(force=True, timeout=1000)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
 def verify_newsletter_success(page):
     keywords = [
         "grazie per l'iscrizione", "grazie", "thank you", "thanks for subscribing",
@@ -155,7 +171,6 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
                 context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
                 page = context.new_page()
 
-                # Memory crash thadukka media elements abort panrom
                 page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["media", "font"] else route.continue_())
 
                 safe_show_step(page, f"Website open panrom: {url}")
@@ -164,28 +179,65 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
 
                 auto_accept_cookies(page)
 
-                # Page full-aa check pannum
-                input_field = page.locator("//input[@type='email' or contains(@name, 'email') or contains(@placeholder, 'email') or contains(@placeholder, 'indirizzo')]").first
-                
-                # Visible illa na footer-ku scroll pannum
-                if input_field.count() == 0 or not input_field.is_visible():
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    time.sleep(2)
-                    input_field = page.locator("//footer//input[@type='email' or contains(@name, 'email') or contains(@placeholder, 'email') or contains(@placeholder, 'indirizzo')]").first
+                # 1. Popup Check
+                popup_submitted = False
+                try:
+                    popup = page.locator("div[class*='modal']:visible, div[class*='popup']:visible, div[role='dialog']:visible").first
+                    if popup.count() > 0:
+                        p_email = popup.locator("input[type='email'], input[name*='email' i]").first
+                        if p_email.count() > 0 and p_email.is_visible():
+                            safe_show_step(page, "Popup vandhuduchu! Email fill pandrom...", wait_sec=1)
+                            p_email.fill(email)
+                            time.sleep(1)
 
-                if input_field.count() > 0 and input_field.is_visible():
-                    input_field.scroll_into_view_if_needed()
-                    time.sleep(1)
-                    input_field.click()
-                    input_field.fill(email)
-                    time.sleep(1)
-                    safe_show_step(page, f"Email enter panniyachu: {email}")
+                            # Popup Checkbox handling
+                            handle_checkboxes(popup)
 
-                    btn = page.locator("//button[@type='submit' or contains(@class, 'newsletter') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'subscribe') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'iscriviti')]").first
-                    if btn.count() > 0 and btn.is_visible():
-                        btn.click(timeout=2500)
-                    else:
-                        input_field.press("Enter")
+                            safe_show_step(page, "Popup-la checkbox tick pannitu submit pandrom...", wait_sec=1)
+                            p_btn = popup.locator("button[type='submit'], input[type='submit'], button:has-text('Subscribe'), button:has-text('Get'), button:has-text('Sign')").first
+                            if p_btn.count() > 0 and p_btn.is_visible():
+                                p_btn.click(timeout=2500)
+                            else:
+                                p_email.press("Enter")
+                            popup_submitted = True
+                            time.sleep(3)
+                except Exception:
+                    pass
+
+                # 2. Page / Footer Newsletter Check (Popup submit aagalana)
+                if not popup_submitted:
+                    input_field = page.locator("//input[@type='email' or contains(@name, 'email') or contains(@placeholder, 'email') or contains(@placeholder, 'indirizzo')]").first
+                    
+                    if input_field.count() == 0 or not input_field.is_visible():
+                        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                        time.sleep(2)
+                        input_field = page.locator("//footer//input[@type='email' or contains(@name, 'email') or contains(@placeholder, 'email') or contains(@placeholder, 'indirizzo')]").first
+
+                    if input_field.count() > 0 and input_field.is_visible():
+                        input_field.scroll_into_view_if_needed()
+                        time.sleep(1)
+                        input_field.click()
+                        input_field.fill(email)
+                        time.sleep(1)
+                        safe_show_step(page, f"Email enter panniyachu: {email}")
+
+                        # Form / Page level Checkboxes (Privacy / GDPR) tick panrom
+                        safe_show_step(page, "Form checkbox irukka nu paathu tick pandrom...", wait_sec=1)
+                        try:
+                            parent_form = input_field.locator("xpath=ancestor::form").first
+                            if parent_form.count() > 0:
+                                handle_checkboxes(parent_form)
+                            else:
+                                handle_checkboxes(page)
+                        except Exception:
+                            handle_checkboxes(page)
+
+                        # Submit Click
+                        btn = page.locator("//button[@type='submit' or contains(@class, 'newsletter') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'subscribe') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'iscriviti')]").first
+                        if btn.count() > 0 and btn.is_visible():
+                            btn.click(timeout=2500)
+                        else:
+                            input_field.press("Enter")
 
                 time.sleep(4)
 
@@ -245,7 +297,7 @@ if st.session_state.waiting_for_user:
     st.divider()
     st.subheader(f"⚠️ Action Required for: {st.session_state.pending_site}")
     st.error(f"Kaaranam: {st.session_state.pending_reason}")
-    st.markdown(f"👉 [Direct Link Open Panni Mudiyunga: {st.session_state.pending_site}]({st.session_state.pending_site})")
+    st.markdown(f"### 👉 [Direct Link Open Panni Mudiyunga: {st.session_state.pending_site}]({st.session_state.pending_site})")
 
     if os.path.exists("current_screen.png"):
         st.image("current_screen.png", caption="Current Status Screen")
