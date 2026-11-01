@@ -5,8 +5,8 @@ import subprocess
 import gc
 from playwright.sync_api import sync_playwright
 
-st.set_page_config(page_title="Universal Popup Subscriber", layout="wide")
-st.title("Universal Strict Popup & Newsletter Engine")
+st.set_page_config(page_title="Universal Newsletter Engine", layout="wide")
+st.title("Universal Bulletproof Newsletter Subscriber")
 
 @st.cache_resource
 def install_browsers():
@@ -33,13 +33,13 @@ if "pending_reason" not in st.session_state:
     st.session_state.pending_reason = None
 
 email = st.text_input("Enter unga Yahoo Email Address:", placeholder="example@yahoo.com")
-domains_input = st.text_area("Enter Domains / URLs (Oru line-ku oru domain):", placeholder="https://teswaybike.com\nhttps://yulyoie.com")
+domains_input = st.text_area("Enter Domains / URLs (Oru line-ku oru domain):", placeholder="https://brosshome.com\nhttps://yulyoie.com")
 
 urls = [u.strip() for u in domains_input.strip().splitlines() if u.strip()]
 
 col_b1, col_b2, col_b3 = st.columns([1.5, 1.5, 4])
 with col_b1:
-    if st.button("▶️ Start Smart Automation"):
+    if st.button("▶️ Start Automation"):
         if not email or not urls:
             st.error("Email matrum Domains compulsory da!")
         else:
@@ -73,23 +73,26 @@ live_status = st.empty()
 live_image = st.empty()
 progress_bar = st.progress(0)
 
-# Memory crash prevent panna strict Chromium flags
+# Ultra-low RAM flags for Linux Container
 browser_args = [
     "--no-sandbox",
     "--disable-setuid-sandbox",
     "--disable-dev-shm-usage",
     "--disable-gpu",
+    "--disable-software-rasterizer",
+    "--no-zygote",
+    "--single-process",
     "--disable-http2",
     "--ignore-certificate-errors",
     "--disable-blink-features=AutomationControlled",
-    "--js-flags=--max-old-space-size=512"
+    "--js-flags=--max-old-space-size=256"
 ]
 
 def safe_show_step(page, msg, wait_sec=1):
     live_status.info(msg)
     try:
         if not page.is_closed():
-            img_bytes = page.screenshot(timeout=3500)
+            img_bytes = page.screenshot(timeout=3000)
             live_image.image(img_bytes, caption=msg, use_column_width=True)
     except Exception:
         pass
@@ -98,7 +101,7 @@ def safe_show_step(page, msg, wait_sec=1):
 def safe_save_screenshot(page):
     try:
         if not page.is_closed():
-            page.screenshot(path="current_screen.png", timeout=3500)
+            page.screenshot(path="current_screen.png", timeout=3000)
             return True
     except Exception:
         pass
@@ -151,6 +154,7 @@ def verify_newsletter_success(page):
 
     return False, None
 
+# Main Loop with Strict Memory Protection
 if st.session_state.is_running and not st.session_state.waiting_for_user and urls:
     total_urls = len(urls)
 
@@ -172,87 +176,81 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
                 context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
                 page = context.new_page()
 
-                # Memory save
-                page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["media", "font"] else route.continue_())
+                # Block images, fonts, ads, media to keep memory near 0MB
+                page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "media", "font", "stylesheet"] else route.continue_())
 
-                safe_show_step(page, f"Step 1: Website open pandrom -> {url}")
-                page.goto(url, timeout=35000, wait_until="domcontentloaded")
+                safe_show_step(page, f"Website open panrom: {url}", wait_sec=1)
                 
-                # Cookie Banner handle
+                # Low-load navigation
+                try:
+                    page.goto(url, timeout=35000, wait_until="commit")
+                except Exception as e:
+                    if "ERR_CONNECTION_CLOSED" in str(e) or "ERR_NAME_NOT_RESOLVED" in str(e):
+                        st.session_state.failed_list.append((url, "Site unavailable / Offline"))
+                        context.close()
+                        browser.close()
+                        st.session_state.current_index += 1
+                        continue
+
+                time.sleep(3)
                 auto_accept_cookies(page)
 
-                # Step 2: Mandatory 6-second wait for Popup to trigger
-                safe_show_step(page, "Step 2: Newsletter / Discount Popup varudha nu wait pandrom...", wait_sec=4)
-                time.sleep(3)
-
+                # Step 2: Check for Popup
+                safe_show_step(page, "Popup thedurom...", wait_sec=2)
                 submitted = False
 
-                # Priority 1: Check Modal / Popup Newsletter
                 try:
                     popup_selectors = [
                         "div[class*='modal']:visible",
                         "div[class*='popup']:visible",
                         "div[role='dialog']:visible",
-                        "div[class*='newsletter-popup']:visible",
-                        "div[id*='popup']:visible"
+                        "div[class*='newsletter']:visible"
                     ]
                     for sel in popup_selectors:
                         popup = page.locator(sel).first
                         if popup.count() > 0 and popup.is_visible():
-                            p_email = popup.locator("input[type='email'], input[name*='email' i], input[placeholder*='mail' i]").first
+                            p_email = popup.locator("input[type='email'], input[name*='email' i]").first
                             if p_email.count() > 0 and p_email.is_visible():
-                                safe_show_step(page, "Popup vandhuduchu! Email fill pandrom...", wait_sec=1)
+                                safe_show_step(page, "Popup-la email fill pandrom...", wait_sec=1)
                                 p_email.fill(email)
                                 time.sleep(1)
-                                
-                                # Popup checkbox auto-tick
                                 handle_checkboxes(popup)
-
-                                # Submit
-                                p_btn = popup.locator("//button[@type='submit' or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'subscribe') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'get') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'join')] | //input[@type='submit']").first
+                                
+                                p_btn = popup.locator("//button[@type='submit' or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'subscribe') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'get')] | //input[@type='submit']").first
                                 if p_btn.count() > 0 and p_btn.is_visible():
                                     p_btn.click(timeout=2500)
                                 else:
                                     p_email.press("Enter")
                                 submitted = True
-                                time.sleep(4)
+                                time.sleep(3)
                                 break
                 except Exception:
                     pass
 
-                # Priority 2: Page / Footer Newsletter if no popup appeared
+                # Step 3: Page / Footer Newsletter if no popup appeared
                 if not submitted:
-                    safe_show_step(page, "Popup varala, Footer newsletter thedurom...", wait_sec=1)
-                    page.keyboard.press("PageDown")
-                    time.sleep(1)
-                    page.keyboard.press("PageDown")
-                    time.sleep(1)
-
                     input_field = page.locator("//input[@type='email' or contains(@name, 'email') or contains(@placeholder, 'email') or contains(@placeholder, 'indirizzo') or contains(@placeholder, 'mail')]").first
+                    
                     if input_field.count() > 0 and input_field.is_visible():
-                        input_field.scroll_into_view_if_needed()
-                        time.sleep(1)
-                        input_field.click()
                         input_field.fill(email)
                         time.sleep(1)
                         safe_show_step(page, f"Email enter panniyachu: {email}")
 
-                        # Checkboxes
                         handle_checkboxes(page)
 
-                        btn = page.locator("//button[@type='submit' or contains(@class, 'newsletter') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'subscribe') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'iscriviti') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'join')]").first
+                        btn = page.locator("//button[@type='submit' or contains(@class, 'newsletter') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'subscribe') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'join')]").first
                         if btn.count() > 0 and btn.is_visible():
                             btn.click(timeout=2500)
                         else:
                             input_field.press("Enter")
                         submitted = True
 
-                time.sleep(5)
+                time.sleep(4)
 
                 # CAPTCHA check
                 is_captcha = False
                 try:
-                    is_captcha = page.locator("iframe[src*='recaptcha'], iframe[src*='hcaptcha'], iframe[src*='turnstile'], text=/captcha|access denied|verify you are human/i").count() > 0
+                    is_captcha = page.locator("iframe[src*='recaptcha'], iframe[src*='hcaptcha'], iframe[src*='turnstile'], text=/captcha|access denied/i").count() > 0
                 except Exception:
                     pass
 
@@ -270,13 +268,13 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
                 # Confirmation Verify
                 is_confirmed, match_msg = verify_newsletter_success(page)
                 if is_confirmed:
-                    safe_show_step(page, f"✅ Confirmed: {match_msg}! Next domain-ku porom.", wait_sec=3)
+                    safe_show_step(page, f"✅ Confirmed: {match_msg}!", wait_sec=2)
                     st.session_state.success_list.append(url)
                 else:
                     safe_save_screenshot(page)
                     st.session_state.waiting_for_user = True
                     st.session_state.pending_site = exact_url
-                    st.session_state.pending_reason = "Thank you / Success message varala. Check pannunga."
+                    st.session_state.pending_reason = "Thank you / Confirmation message varala"
                     context.close()
                     browser.close()
                     st.rerun()
@@ -286,12 +284,7 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
 
         except Exception as e:
             err_msg = str(e)
-            if "ERR_NAME_NOT_RESOLVED" in err_msg:
-                st.session_state.failed_list.append((url, "Domain illai / Invalid URL"))
-            elif "closed" in err_msg:
-                st.session_state.failed_list.append((url, "Memory crash aagi browser moodiduchu"))
-            else:
-                st.session_state.failed_list.append((url, err_msg[:35]))
+            st.session_state.failed_list.append((url, err_msg[:30]))
 
         gc.collect()
         st.session_state.current_index += 1
