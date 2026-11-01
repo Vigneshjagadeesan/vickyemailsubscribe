@@ -6,7 +6,7 @@ import gc
 from playwright.sync_api import sync_playwright
 
 st.set_page_config(page_title="Universal Newsletter Engine", layout="wide")
-st.title("Universal Footer & Popup Newsletter Subscriber")
+st.title("Universal Bulletproof Newsletter Subscriber")
 
 @st.cache_resource
 def install_browsers():
@@ -33,7 +33,7 @@ if "pending_reason" not in st.session_state:
     st.session_state.pending_reason = None
 
 email = st.text_input("Enter unga Yahoo Email Address:", placeholder="example@yahoo.com")
-domains_input = st.text_area("Enter Domains / URLs (Oru line-ku oru domain):", placeholder="https://yulyoie.com\nhttps://bellalab.sk")
+domains_input = st.text_area("Enter Domains / URLs (Oru line-ku oru domain):", placeholder="https://teswaybike.com\nhttps://yulyoie.com")
 
 urls = [u.strip() for u in domains_input.strip().splitlines() if u.strip()]
 
@@ -104,7 +104,7 @@ def safe_save_screenshot(page):
 
 def auto_accept_cookies(page):
     try:
-        btn = page.locator("//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'accept') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'agree') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'allow') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'accetta')]").first
+        btn = page.locator("//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'accept') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'agree') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'allow') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'accetta') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'prijat')]").first
         if btn.count() > 0 and btn.is_visible():
             btn.click(timeout=1500)
             time.sleep(1)
@@ -112,7 +112,6 @@ def auto_accept_cookies(page):
         pass
 
 def handle_checkboxes(container_or_page):
-    """Checkbox irundha automatic-aa click panni tick pannum"""
     try:
         cbs = container_or_page.locator("input[type='checkbox']").all()
         for cb in cbs:
@@ -131,7 +130,7 @@ def verify_newsletter_success(page):
     keywords = [
         "grazie per l'iscrizione", "grazie", "thank you", "thanks for subscribing",
         "merci", "danke", "vielen dank", "dakujeme", "gracias",
-        "check your email", "subscribed", "iscritto", "success"
+        "check your email", "subscribed", "iscritto", "success", "welcome"
     ]
     try:
         body_text = page.inner_text("body", timeout=3000).lower()
@@ -143,8 +142,8 @@ def verify_newsletter_success(page):
 
     try:
         curr_url = page.url.lower()
-        if "customer_posted=true" in curr_url or "contact_posted=true" in curr_url or "thank" in curr_url:
-            return True, "URL parameter confirmed"
+        if any(term in curr_url for term in ["customer_posted=true", "contact_posted=true", "thank", "success", "subscribed"]):
+            return True, "URL confirmation"
     except Exception:
         pass
 
@@ -171,6 +170,7 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
                 context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
                 page = context.new_page()
 
+                # Memory save
                 page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["media", "font"] else route.continue_())
 
                 safe_show_step(page, f"Website open panrom: {url}")
@@ -179,8 +179,8 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
 
                 auto_accept_cookies(page)
 
-                # 1. Popup Check
-                popup_submitted = False
+                # 1. Pop-up Check
+                submitted = False
                 try:
                     popup = page.locator("div[class*='modal']:visible, div[class*='popup']:visible, div[role='dialog']:visible").first
                     if popup.count() > 0:
@@ -189,29 +189,28 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
                             safe_show_step(page, "Popup vandhuduchu! Email fill pandrom...", wait_sec=1)
                             p_email.fill(email)
                             time.sleep(1)
-
-                            # Popup Checkbox handling
                             handle_checkboxes(popup)
-
-                            safe_show_step(page, "Popup-la checkbox tick pannitu submit pandrom...", wait_sec=1)
                             p_btn = popup.locator("button[type='submit'], input[type='submit'], button:has-text('Subscribe'), button:has-text('Get'), button:has-text('Sign')").first
                             if p_btn.count() > 0 and p_btn.is_visible():
                                 p_btn.click(timeout=2500)
                             else:
                                 p_email.press("Enter")
-                            popup_submitted = True
+                            submitted = True
                             time.sleep(3)
                 except Exception:
                     pass
 
-                # 2. Page / Footer Newsletter Check (Popup submit aagalana)
-                if not popup_submitted:
-                    input_field = page.locator("//input[@type='email' or contains(@name, 'email') or contains(@placeholder, 'email') or contains(@placeholder, 'indirizzo')]").first
+                # 2. Page & Footer Email Search (Native Keyboard Scroll - Zero TypeError)
+                if not submitted:
+                    input_field = page.locator("//input[@type='email' or contains(@name, 'email') or contains(@placeholder, 'email') or contains(@placeholder, 'indirizzo') or contains(@placeholder, 'mail')]").first
                     
                     if input_field.count() == 0 or not input_field.is_visible():
-                        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                        time.sleep(2)
-                        input_field = page.locator("//footer//input[@type='email' or contains(@name, 'email') or contains(@placeholder, 'email') or contains(@placeholder, 'indirizzo')]").first
+                        # Native keyboard scroll to avoid JavaScript TypeError
+                        page.keyboard.press("PageDown")
+                        time.sleep(1)
+                        page.keyboard.press("PageDown")
+                        time.sleep(1)
+                        input_field = page.locator("//input[@type='email' or contains(@name, 'email') or contains(@placeholder, 'email') or contains(@placeholder, 'indirizzo') or contains(@placeholder, 'mail')]").first
 
                     if input_field.count() > 0 and input_field.is_visible():
                         input_field.scroll_into_view_if_needed()
@@ -221,23 +220,16 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
                         time.sleep(1)
                         safe_show_step(page, f"Email enter panniyachu: {email}")
 
-                        # Form / Page level Checkboxes (Privacy / GDPR) tick panrom
-                        safe_show_step(page, "Form checkbox irukka nu paathu tick pandrom...", wait_sec=1)
-                        try:
-                            parent_form = input_field.locator("xpath=ancestor::form").first
-                            if parent_form.count() > 0:
-                                handle_checkboxes(parent_form)
-                            else:
-                                handle_checkboxes(page)
-                        except Exception:
-                            handle_checkboxes(page)
+                        # Checkboxes handle
+                        handle_checkboxes(page)
 
                         # Submit Click
-                        btn = page.locator("//button[@type='submit' or contains(@class, 'newsletter') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'subscribe') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'iscriviti')]").first
+                        btn = page.locator("//button[@type='submit' or contains(@class, 'newsletter') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'subscribe') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'iscriviti') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'join')]").first
                         if btn.count() > 0 and btn.is_visible():
                             btn.click(timeout=2500)
                         else:
                             input_field.press("Enter")
+                        submitted = True
 
                 time.sleep(4)
 
@@ -259,7 +251,7 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
                     browser.close()
                     st.rerun()
 
-                # Confirmation verify
+                # Confirmation Verify
                 is_confirmed, match_msg = verify_newsletter_success(page)
                 if is_confirmed:
                     safe_show_step(page, f"✅ Confirmed: {match_msg}!")
@@ -283,7 +275,7 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
             elif "closed" in err_msg:
                 st.session_state.failed_list.append((url, "Browser crash / Heavy site"))
             else:
-                st.session_state.failed_list.append((url, err_msg[:30]))
+                st.session_state.failed_list.append((url, err_msg[:35]))
 
         gc.collect()
         st.session_state.current_index += 1
@@ -293,6 +285,7 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
         live_status.success("Ellaa websites-um process aaiduchu!")
         st.session_state.is_running = False
 
+# Action Required Stop Area
 if st.session_state.waiting_for_user:
     st.divider()
     st.subheader(f"⚠️ Action Required for: {st.session_state.pending_site}")
