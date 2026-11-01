@@ -33,7 +33,7 @@ if "pending_reason" not in st.session_state:
     st.session_state.pending_reason = None
 
 email = st.text_input("Enter unga Yahoo Email Address:", placeholder="example@yahoo.com")
-domains_input = st.text_area("Enter Domains / URLs (Oru line-ku oru domain):", placeholder="https://brosshome.com\nhttps://yulyoie.com")
+domains_input = st.text_area("Enter Domains / URLs (Oru line-ku oru domain):", placeholder="https://kbombkratom.com\nhttps://yulyoie.com")
 
 urls = [u.strip() for u in domains_input.strip().splitlines() if u.strip()]
 
@@ -73,19 +73,15 @@ live_status = st.empty()
 live_image = st.empty()
 progress_bar = st.progress(0)
 
-# Ultra-low RAM flags for Linux Container
+# Stable Chromium flags for Streamlit Cloud (No crash, reliable renderer)
 browser_args = [
     "--no-sandbox",
     "--disable-setuid-sandbox",
     "--disable-dev-shm-usage",
     "--disable-gpu",
-    "--disable-software-rasterizer",
-    "--no-zygote",
-    "--single-process",
     "--disable-http2",
     "--ignore-certificate-errors",
-    "--disable-blink-features=AutomationControlled",
-    "--js-flags=--max-old-space-size=256"
+    "--disable-blink-features=AutomationControlled"
 ]
 
 def safe_show_step(page, msg, wait_sec=1):
@@ -154,7 +150,7 @@ def verify_newsletter_success(page):
 
     return False, None
 
-# Main Loop with Strict Memory Protection
+# Main Loop
 if st.session_state.is_running and not st.session_state.waiting_for_user and urls:
     total_urls = len(urls)
 
@@ -176,16 +172,16 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
                 context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
                 page = context.new_page()
 
-                # Block images, fonts, ads, media to keep memory near 0MB
-                page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "media", "font", "stylesheet"] else route.continue_())
+                # Block heavy media & fonts only, keep styles intact so layout does not crash
+                page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["media", "font"] else route.continue_())
 
-                safe_show_step(page, f"Website open panrom: {url}", wait_sec=1)
+                safe_show_step(page, f"Step 1: Website open panrom: {url}", wait_sec=1)
                 
-                # Low-load navigation
                 try:
-                    page.goto(url, timeout=35000, wait_until="commit")
+                    page.goto(url, timeout=35000, wait_until="domcontentloaded")
                 except Exception as e:
-                    if "ERR_CONNECTION_CLOSED" in str(e) or "ERR_NAME_NOT_RESOLVED" in str(e):
+                    err_str = str(e)
+                    if any(x in err_str for x in ["ERR_CONNECTION_CLOSED", "ERR_NAME_NOT_RESOLVED", "ERR_CONNECTION_REFUSED"]):
                         st.session_state.failed_list.append((url, "Site unavailable / Offline"))
                         context.close()
                         browser.close()
@@ -195,62 +191,65 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
                 time.sleep(3)
                 auto_accept_cookies(page)
 
-                # Step 2: Check for Popup
-                safe_show_step(page, "Popup thedurom...", wait_sec=2)
+                # Step 2: Wait for Popup to trigger
+                safe_show_step(page, "Step 2: Popup varudha nu wait pandrom...", wait_sec=2)
+                time.sleep(3)
+
                 submitted = False
 
+                # Priority 1: Check Modal / Popup Newsletter
                 try:
-                    popup_selectors = [
-                        "div[class*='modal']:visible",
-                        "div[class*='popup']:visible",
-                        "div[role='dialog']:visible",
-                        "div[class*='newsletter']:visible"
-                    ]
-                    for sel in popup_selectors:
-                        popup = page.locator(sel).first
-                        if popup.count() > 0 and popup.is_visible():
-                            p_email = popup.locator("input[type='email'], input[name*='email' i]").first
-                            if p_email.count() > 0 and p_email.is_visible():
-                                safe_show_step(page, "Popup-la email fill pandrom...", wait_sec=1)
-                                p_email.fill(email)
-                                time.sleep(1)
-                                handle_checkboxes(popup)
-                                
-                                p_btn = popup.locator("//button[@type='submit' or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'subscribe') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'get')] | //input[@type='submit']").first
-                                if p_btn.count() > 0 and p_btn.is_visible():
-                                    p_btn.click(timeout=2500)
-                                else:
-                                    p_email.press("Enter")
-                                submitted = True
-                                time.sleep(3)
-                                break
+                    popup = page.locator("div[class*='modal']:visible, div[class*='popup']:visible, div[role='dialog']:visible, div[class*='newsletter-popup']:visible, div[id*='popup']:visible").first
+                    if popup.count() > 0 and popup.is_visible():
+                        p_email = popup.locator("input[type='email'], input[name*='email' i], input[placeholder*='mail' i]").first
+                        if p_email.count() > 0 and p_email.is_visible():
+                            safe_show_step(page, "Popup vandhuduchu! Email fill pandrom...", wait_sec=1)
+                            p_email.fill(email)
+                            time.sleep(1)
+                            handle_checkboxes(popup)
+                            
+                            p_btn = popup.locator("//button[@type='submit' or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'subscribe') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'get') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'sign')] | //input[@type='submit']").first
+                            if p_btn.count() > 0 and p_btn.is_visible():
+                                p_btn.click(timeout=2500)
+                            else:
+                                p_email.press("Enter")
+                            submitted = True
+                            time.sleep(4)
                 except Exception:
                     pass
 
-                # Step 3: Page / Footer Newsletter if no popup appeared
+                # Priority 2: Page / Footer Newsletter if no popup appeared
                 if not submitted:
+                    safe_show_step(page, "Popup varala, Footer newsletter thedurom...", wait_sec=1)
+                    page.keyboard.press("PageDown")
+                    time.sleep(1)
+                    page.keyboard.press("PageDown")
+                    time.sleep(1)
+
                     input_field = page.locator("//input[@type='email' or contains(@name, 'email') or contains(@placeholder, 'email') or contains(@placeholder, 'indirizzo') or contains(@placeholder, 'mail')]").first
-                    
                     if input_field.count() > 0 and input_field.is_visible():
+                        input_field.scroll_into_view_if_needed()
+                        time.sleep(1)
+                        input_field.click()
                         input_field.fill(email)
                         time.sleep(1)
                         safe_show_step(page, f"Email enter panniyachu: {email}")
 
                         handle_checkboxes(page)
 
-                        btn = page.locator("//button[@type='submit' or contains(@class, 'newsletter') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'subscribe') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'join')]").first
+                        btn = page.locator("//button[@type='submit' or contains(@class, 'newsletter') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'subscribe') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'iscriviti') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'join')]").first
                         if btn.count() > 0 and btn.is_visible():
                             btn.click(timeout=2500)
                         else:
                             input_field.press("Enter")
                         submitted = True
 
-                time.sleep(4)
+                time.sleep(5)
 
                 # CAPTCHA check
                 is_captcha = False
                 try:
-                    is_captcha = page.locator("iframe[src*='recaptcha'], iframe[src*='hcaptcha'], iframe[src*='turnstile'], text=/captcha|access denied/i").count() > 0
+                    is_captcha = page.locator("iframe[src*='recaptcha'], iframe[src*='hcaptcha'], iframe[src*='turnstile'], text=/captcha|access denied|verify you are human/i").count() > 0
                 except Exception:
                     pass
 
@@ -268,13 +267,13 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
                 # Confirmation Verify
                 is_confirmed, match_msg = verify_newsletter_success(page)
                 if is_confirmed:
-                    safe_show_step(page, f"✅ Confirmed: {match_msg}!", wait_sec=2)
+                    safe_show_step(page, f"✅ Confirmed: {match_msg}! Next site-ku porom.", wait_sec=2)
                     st.session_state.success_list.append(url)
                 else:
                     safe_save_screenshot(page)
                     st.session_state.waiting_for_user = True
                     st.session_state.pending_site = exact_url
-                    st.session_state.pending_reason = "Thank you / Confirmation message varala"
+                    st.session_state.pending_reason = "Thank you / Success message varala. Check pannunga."
                     context.close()
                     browser.close()
                     st.rerun()
@@ -284,7 +283,7 @@ if st.session_state.is_running and not st.session_state.waiting_for_user and url
 
         except Exception as e:
             err_msg = str(e)
-            st.session_state.failed_list.append((url, err_msg[:30]))
+            st.session_state.failed_list.append((url, err_msg[:35]))
 
         gc.collect()
         st.session_state.current_index += 1
