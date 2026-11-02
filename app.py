@@ -1,340 +1,138 @@
 import streamlit as st
-import time
-import os
+import asyncio
+from playwright.async_api import async_playwright
+from faker import Faker
+import pandas as pd
 import subprocess
-import gc
-from playwright.sync_api import sync_playwright
+import sys
 
-st.set_page_config(page_title="Universal Newsletter Engine", layout="wide")
-st.title("Universal Bulletproof Newsletter Subscriber")
-
+# Ensure Playwright browser binaries are present on Streamlit Cloud
 @st.cache_resource
-def install_browsers():
+def install_playwright_browsers():
+    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"])
+
+install_playwright_browsers()
+
+fake = Faker()
+
+st.set_page_config(page_title="Bulk Inbound Subscriber", layout="wide")
+st.title("Bulk Inbound Newsletter Automator (Cloud)")
+
+col1, col2 = st.columns([1, 2])
+
+with col1:
+    target_email = st.text_input("Target Email Address", placeholder="user@example.com")
+    domains_input = st.text_area(
+        "Domain List (one per line)", 
+        placeholder="example1.com\nexample2.com",
+        height=250
+    )
+    start_btn = st.button("Start Bulk Subscription", type="primary")
+
+async def process_domain(page, url, email):
     try:
-        subprocess.run(["playwright", "install", "chromium"], check=True)
-    except Exception:
-        pass
+        await page.goto(url, timeout=20000, wait_until="domcontentloaded")
+        await asyncio.sleep(4)
 
-install_browsers()
+        # Captcha detection
+        page_content = await page.content()
+        if any(bot in page_content.lower() for bot in ["g-recaptcha", "cf-turnstile", "h-captcha", "recaptcha"]):
+            return {"status": "Skipped (Captcha Present)", "link": url}
 
-if "current_index" not in st.session_state:
-    st.session_state.current_index = 0
-if "is_running" not in st.session_state:
-    st.session_state.is_running = False
-if "success_list" not in st.session_state:
-    st.session_state.success_list = []
-if "failed_list" not in st.session_state:
-    st.session_state.failed_list = []
-if "waiting_for_user" not in st.session_state:
-    st.session_state.waiting_for_user = False
-if "pending_site" not in st.session_state:
-    st.session_state.pending_site = None
-if "pending_reason" not in st.session_state:
-    st.session_state.pending_reason = None
+        # 1. Popup / Modal check
+        modal_inputs = [
+            "div[role='dialog'] input[type='email']",
+            ".modal input[type='email']",
+            "[class*='popup'] input[type='email']",
+            "[class*='newsletter'] input[type='email']"
+        ]
+        for selector in modal_inputs:
+            elem = await page.query_selector(selector)
+            if elem and await elem.is_visible():
+                await elem.fill(email)
+                chk = await page.query_selector("div[role='dialog'] input[type='checkbox'], .modal input[type='checkbox']")
+                if chk:
+                    try: await chk.check()
+                    except: pass
+                btn = await page.query_selector("div[role='dialog'] button[type='submit'], .modal button[type='submit']")
+                if btn:
+                    await btn.click()
+                    await asyncio.sleep(3)
+                    return {"status": "Subscribed (Popup)", "link": url}
 
-email = st.text_input("Enter unga Yahoo Email Address:", placeholder="example@yahoo.com")
-domains_input = st.text_area("Enter Domains / URLs (Oru line-ku oru domain):", placeholder="https://bondiresortwear.com.au/\nhttps://yulyoie.com")
+        # 2. Footer / Main Page Form
+        page_inputs = [
+            "footer input[type='email']",
+            "form input[type='email']",
+            "input[name*='email' i]",
+            "input[placeholder*='email' i]",
+            "input[id*='email' i]"
+        ]
+        for selector in page_inputs:
+            elem = await page.query_selector(selector)
+            if elem and await elem.is_visible():
+                await elem.fill(email)
+                chk = await page.query_selector("footer input[type='checkbox'], form input[type='checkbox']")
+                if chk:
+                    try: await chk.check()
+                    except: pass
+                btn = await page.query_selector("footer button, form button[type='submit'], button:has-text('Subscribe'), button:has-text('Sign Up')")
+                if btn:
+                    await btn.click()
+                    await asyncio.sleep(3)
+                    return {"status": "Subscribed (Form)", "link": url}
 
-urls = [u.strip() for u in domains_input.strip().splitlines() if u.strip()]
+        return {"status": "Failed (Form Not Found)", "link": url}
 
-col_b1, col_b2, col_b3 = st.columns([1.5, 1.5, 4])
-with col_b1:
-    if st.button("▶️ Start Automation"):
-        if not email or not urls:
-            st.error("Email matrum Domains compulsory da!")
+    except Exception as e:
+        err = str(e).split("\n")[0]
+        if "ERR_NAME_NOT_RESOLVED" in err:
+            return {"status": "Failed (Invalid Domain)", "link": url}
+        if "Timeout" in err:
+            return {"status": "Failed (Timeout)", "link": url}
+        return {"status": f"Failed: {err[:25]}", "link": url}
+
+with col2:
+    st.subheader("Execution Status")
+    status_bar = st.empty()
+    progress_bar = st.progress(0)
+    table_placeholder = st.empty()
+
+    if start_btn:
+        if not target_email or not domains_input.strip():
+            st.error("Email and Domain list fill pannu da!")
         else:
-            st.session_state.is_running = True
-            st.session_state.waiting_for_user = False
+            raw_domains = [d.strip() for d in domains_input.strip().split("\n") if d.strip()]
+            results = []
+            total = len(raw_domains)
 
-with col_b2:
-    if st.button("⏹️ Stop / Pause"):
-        st.session_state.is_running = False
+            async def run_batch():
+                async with async_playwright() as p:
+                    # Cloud-la headless=True thaan work aagum
+                    browser = await p.chromium.launch(
+                        headless=True,
+                        args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+                    )
+                    context = await browser.new_context(
+                        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                        viewport={"width": 1280, "height": 720}
+                    )
+                    page = await context.new_page()
 
-with col_b3:
-    if st.button("🔄 Reset All"):
-        st.session_state.current_index = 0
-        st.session_state.is_running = False
-        st.session_state.waiting_for_user = False
-        st.session_state.pending_site = None
-        st.session_state.pending_reason = None
-        st.session_state.success_list = []
-        st.session_state.failed_list = []
-        if os.path.exists("current_screen.png"):
-            try:
-                os.remove("current_screen.png")
-            except Exception:
-                pass
-        st.rerun()
+                    for index, domain in enumerate(raw_domains):
+                        formatted_url = domain if domain.startswith("http") else f"https://{domain}"
+                        status_bar.info(f"Processing ({index + 1}/{total}): **{formatted_url}**")
+                        progress_bar.progress((index + 1) / total)
 
-st.divider()
+                        res = await process_domain(page, formatted_url, target_email)
+                        results.append({
+                            "Domain": formatted_url,
+                            "Status": res["status"],
+                            "Action Link": res["link"]
+                        })
+                        table_placeholder.dataframe(pd.DataFrame(results), use_container_width=True)
 
-st.subheader("📺 Real-Time Screenshot Monitor")
-live_status = st.empty()
-live_image = st.empty()
-progress_bar = st.progress(0)
+                    status_bar.success("Finished all domains!")
+                    await browser.close()
 
-browser_args = [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-    "--disable-http2",
-    "--ignore-certificate-errors",
-    "--disable-blink-features=AutomationControlled"
-]
-
-def safe_show_step(page, msg, wait_sec=1):
-    live_status.info(msg)
-    try:
-        if not page.is_closed():
-            img_bytes = page.screenshot(timeout=3000)
-            live_image.image(img_bytes, caption=msg, use_column_width=True)
-    except Exception:
-        pass
-    time.sleep(wait_sec)
-
-def safe_save_screenshot(page):
-    try:
-        if not page.is_closed():
-            page.screenshot(path="current_screen.png", timeout=3000)
-            return True
-    except Exception:
-        pass
-    return False
-
-def auto_accept_cookies(page):
-    try:
-        btn = page.locator("//button[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'accept') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'agree') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'allow') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'accetta')]").first
-        if btn.count() > 0 and btn.is_visible():
-            btn.click(timeout=1500)
-            time.sleep(1)
-    except Exception:
-        pass
-
-def handle_checkboxes(container):
-    try:
-        cbs = container.locator("input[type='checkbox']").all()
-        for cb in cbs:
-            try:
-                if not cb.is_checked():
-                    cb.check(force=True, timeout=1000)
-            except Exception:
-                try:
-                    cb.click(force=True, timeout=1000)
-                except Exception:
-                    pass
-    except Exception:
-        pass
-
-def try_fill_and_submit_in_frame(frame_or_page, target_email):
-    """Main page matrum Klaviyo/Omnisend iframe-kulla irukura email fields-a auto fill pannum"""
-    try:
-        email_inputs = frame_or_page.locator("input[type='email'], input[name*='email' i], input[placeholder*='email' i], input[placeholder*='mail' i], input[aria-label*='email' i]").all()
-        for inp in email_inputs:
-            if inp.is_visible():
-                inp.click(timeout=1500)
-                inp.fill(target_email)
-                time.sleep(1)
-                handle_checkboxes(frame_or_page)
-                
-                # Submit button inside same frame
-                btn = frame_or_page.locator("//button[@type='submit' or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'subscribe') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'get') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'sign') or contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'join')] | //input[@type='submit']").first
-                if btn.count() > 0 and btn.is_visible():
-                    btn.click(timeout=2500)
-                else:
-                    inp.press("Enter")
-                return True
-    except Exception:
-        pass
-    return False
-
-def verify_newsletter_success(page):
-    keywords = [
-        "grazie per l'iscrizione", "grazie", "thank you", "thanks for subscribing",
-        "merci", "danke", "vielen dank", "dakujeme", "gracias",
-        "check your email", "subscribed", "iscritto", "success", "welcome"
-    ]
-    try:
-        body_text = page.inner_text("body", timeout=3000).lower()
-        for kw in keywords:
-            if kw in body_text:
-                return True, kw
-    except Exception:
-        pass
-
-    # Check inside all frames
-    for f in page.frames:
-        try:
-            f_text = f.inner_text("body", timeout=1500).lower()
-            for kw in keywords:
-                if kw in f_text:
-                    return True, kw
-        except Exception:
-            pass
-
-    try:
-        curr_url = page.url.lower()
-        if any(term in curr_url for term in ["customer_posted=true", "contact_posted=true", "thank", "success", "subscribed"]):
-            return True, "URL confirmation"
-    except Exception:
-        pass
-
-    return False, None
-
-# Main Loop
-if st.session_state.is_running and not st.session_state.waiting_for_user and urls:
-    total_urls = len(urls)
-
-    while st.session_state.current_index < total_urls and st.session_state.is_running:
-        idx = st.session_state.current_index
-        raw_url = urls[idx]
-        url = raw_url if raw_url.startswith("http") else f"https://{raw_url}"
-
-        progress_bar.progress((idx + 1) / total_urls)
-
-        try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True, args=browser_args)
-                context = browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                    ignore_https_errors=True,
-                    viewport={"width": 1280, "height": 720}
-                )
-                context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-                page = context.new_page()
-
-                page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["media", "font"] else route.continue_())
-
-                safe_show_step(page, f"Step 1: Website open panrom: {url}", wait_sec=1)
-                
-                try:
-                    page.goto(url, timeout=35000, wait_until="domcontentloaded")
-                except Exception as e:
-                    err_str = str(e)
-                    if any(x in err_str for x in ["ERR_CONNECTION_CLOSED", "ERR_NAME_NOT_RESOLVED", "ERR_CONNECTION_REFUSED"]):
-                        st.session_state.failed_list.append((url, "Site unavailable / Offline"))
-                        context.close()
-                        browser.close()
-                        st.session_state.current_index += 1
-                        continue
-
-                time.sleep(3)
-                auto_accept_cookies(page)
-
-                # Popup trigger aaga wait panrom
-                safe_show_step(page, "Step 2: Popup (Klaviyo/Modal) thedurom...", wait_sec=2)
-                time.sleep(4)
-
-                submitted = False
-
-                # 1. Main Page-la irukura popup check
-                submitted = try_fill_and_submit_in_frame(page, email)
-
-                # 2. Iframes (Klaviyo, Mailchimp, Omnisend popups) check
-                if not submitted:
-                    for frame in page.frames:
-                        if frame != page.main_frame:
-                            if try_fill_and_submit_in_frame(frame, email):
-                                safe_show_step(page, "Iframe popup-la email fill panni submit panniyachu!", wait_sec=1)
-                                submitted = True
-                                break
-
-                # 3. Popup varalana Footer scroll
-                if not submitted:
-                    safe_show_step(page, "Popup varala, Footer thedurom...", wait_sec=1)
-                    page.keyboard.press("PageDown")
-                    time.sleep(1)
-                    page.keyboard.press("PageDown")
-                    time.sleep(1)
-                    submitted = try_fill_and_submit_in_frame(page, email)
-
-                time.sleep(5)
-
-                # CAPTCHA check
-                is_captcha = False
-                try:
-                    is_captcha = page.locator("iframe[src*='recaptcha'], iframe[src*='hcaptcha'], iframe[src*='turnstile'], text=/captcha|access denied|verify you are human/i").count() > 0
-                except Exception:
-                    pass
-
-                exact_url = page.url
-
-                if is_captcha:
-                    safe_save_screenshot(page)
-                    st.session_state.waiting_for_user = True
-                    st.session_state.pending_site = exact_url
-                    st.session_state.pending_reason = "CAPTCHA Security Protection vandhurukku"
-                    context.close()
-                    browser.close()
-                    st.rerun()
-
-                # Confirmation Verify
-                is_confirmed, match_msg = verify_newsletter_success(page)
-                if is_confirmed:
-                    safe_show_step(page, f"✅ Confirmed: {match_msg}! Next site-ku porom.", wait_sec=2)
-                    st.session_state.success_list.append(url)
-                else:
-                    safe_save_screenshot(page)
-                    st.session_state.waiting_for_user = True
-                    st.session_state.pending_site = exact_url
-                    st.session_state.pending_reason = "Thank you / Success message varala. Check pannunga."
-                    context.close()
-                    browser.close()
-                    st.rerun()
-
-                context.close()
-                browser.close()
-
-        except Exception as e:
-            err_msg = str(e)
-            st.session_state.failed_list.append((url, err_msg[:35]))
-
-        gc.collect()
-        st.session_state.current_index += 1
-        time.sleep(1)
-
-    if st.session_state.current_index >= total_urls:
-        live_status.success("Ellaa websites-um process aaiduchu!")
-        st.session_state.is_running = False
-
-# Action Required Stop Area
-if st.session_state.waiting_for_user:
-    st.divider()
-    st.subheader(f"⚠️ Action Required for: {st.session_state.pending_site}")
-    st.error(f"Kaaranam: {st.session_state.pending_reason}")
-    st.markdown(f"### 👉 [Direct Link Open Panni Mudiyunga: {st.session_state.pending_site}]({st.session_state.pending_site})")
-
-    if os.path.exists("current_screen.png"):
-        st.image("current_screen.png", caption="Current Status Screen")
-
-    c_sub1, c_sub2 = st.columns([2, 5])
-    with c_sub1:
-        if st.button("✅ Naan Mudichitten / Continue Next Site"):
-            st.session_state.success_list.append(st.session_state.pending_site)
-            st.session_state.current_index += 1
-            st.session_state.waiting_for_user = False
-            st.session_state.pending_site = None
-            st.session_state.pending_reason = None
-            st.session_state.is_running = True
-            st.rerun()
-
-    with c_sub2:
-        if st.button("⏭️ Skip Intha Site"):
-            st.session_state.failed_list.append((st.session_state.pending_site, "Skipped by user"))
-            st.session_state.current_index += 1
-            st.session_state.waiting_for_user = False
-            st.session_state.pending_site = None
-            st.session_state.pending_reason = None
-            st.session_state.is_running = True
-            st.rerun()
-
-st.divider()
-c1, c2 = st.columns(2)
-with c1:
-    st.subheader(f"✅ Confirmed Subscriptions ({len(st.session_state.success_list)})")
-    for item in st.session_state.success_list:
-        st.write(f"- {item}")
-with c2:
-    st.subheader(f"❌ Failed / Action Needed ({len(st.session_state.failed_list)})")
-    for item, err in st.session_state.failed_list:
-        st.write(f"- {item} ({err})")
+            asyncio.run(run_batch())
