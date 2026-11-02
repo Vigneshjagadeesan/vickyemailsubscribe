@@ -1,4 +1,4 @@
 streamlit
 playwright
 faker
-pillow
+pandas
